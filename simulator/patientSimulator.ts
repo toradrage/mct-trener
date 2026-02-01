@@ -18,10 +18,12 @@ export type SessionPhase = "formulation" | Phase;
 
 export const FORMULATION_CHECKLIST = [
   "triggers",
-  "worryThemes",
-  "positiveBeliefs",
-  "uncontrollabilityBeliefs",
-  "copingBehaviors",
+  "whatIfThought",
+  "worryChain",
+  "emotions",
+  "positiveMetaBelief",
+  "negativeMetaBelief",
+  "casStrategy",
 ] as const;
 
 export type FormulationKey = (typeof FORMULATION_CHECKLIST)[number];
@@ -201,7 +203,9 @@ function buildSystemFeedback(params: {
     lines.push("Lock: Ingen CAS-reduksjon forventes ennå; intervensjoner ‘virker’ ikke i denne fasen.");
     const fp = getFormulationProgress((params as any).patientStateForFormulation ?? {});
     if (fp && typeof fp.done === "number") {
-      lines.push(`Checklist: ${fp.done}/${fp.total} (triggers, themes, pos beliefs, uncontrollability, coping)`);
+      lines.push(
+        `Checklist: ${fp.done}/${fp.total} (trigger, what-if, chain, emotions, +meta, -meta, CAS strategy)`,
+      );
     }
   }
   lines.push(`MCT-score (CAS): ${deltaCas <= 0 ? "" : "+"}${deltaCas} (målet er negativt)`);
@@ -244,26 +248,34 @@ function detectFormulationKey(therapistText: string): FormulationKey | null {
     return "triggers";
   }
 
-  // Worry themes / content (everyday wording)
-  if (
-    /(hva\s+bekymrer|hva\s+går\s+bekymring|hvilke\s+tanker|hva\s+er\s+du\s+redd\s+for|hva\s+kan\s+skje)/.test(t)
-  ) {
-    return "worryThemes";
+  // Initial "what if" thought
+  if (/(hva\s+hvis|what\s+if|første\s+tanken|den\s+første\s+tanken)/.test(t)) {
+    return "whatIfThought";
   }
 
-  // Positive beliefs about worry (helpful/prepared)
-  if (/(hjelp(er|e)|nyttig|forberedt|klar|kontroll|holde\s+oversikt)/.test(t)) {
-    return "positiveBeliefs";
+  // Worry chain / escalation ("and then what")
+  if (/(og\s+hvis\s+det\s+skjer\s*hva\s+da|hva\s+da\b|hva\s+er\s+neste|hva\s+skjer\s+videre|bekymringskjede|kjede)/.test(t)) {
+    return "worryChain";
   }
 
-  // Uncontrollability beliefs / can't stop
-  if (/(klarer\s+du\s+å\s+stoppe|får\s+du\s+stoppet|ukontroller|slutter\s+det\s+av\s+seg\s+selv|mister\s+kontroll)/.test(t)) {
-    return "uncontrollabilityBeliefs";
+  // Emotions / affect
+  if (/(hva\s+føler|hvilke\s+følelse|hvordan\s+kjennes\s+det|hva\s+kjenner\s+du|hva\s+skjer\s+i\s+kroppen|uro|angst|stress)/.test(t)) {
+    return "emotions";
   }
 
-  // Coping / safety behaviors
-  if (/(hva\s+gjør\s+du\s+da|hvordan\s+håndter|sjekk(er|e)|forsikring|unngår|google|ringer|berolig)/.test(t)) {
-    return "copingBehaviors";
+  // Positive meta-beliefs about worry (helpful/prepared)
+  if (/(hjelp(er|e)|nyttig|forberedt|klar|kontroll|holde\s+oversikt|unngå\s+å\s+bli\s+overrasket)/.test(t)) {
+    return "positiveMetaBelief";
+  }
+
+  // Negative meta-beliefs about worry (harmful/dangerous/uncontrollable)
+  if (/(farlig|skad|ødeleg|tar\s+knekken\s+på\s+meg|blir\s+gal|mister\s+kontroll|tåler\s+ikke|ukontroller)/.test(t)) {
+    return "negativeMetaBelief";
+  }
+
+  // CAS strategy (what the person does when worry starts)
+  if (/(hva\s+gjør\s+du\s+da|hvordan\s+håndter|bekymr(er|e)\s+mer|grubl(er|e)|sjekk(er|e)|forsikring|unngår|google|ringer|berolig|planlegg(er|e)|scroller)/.test(t)) {
+    return "casStrategy";
   }
 
   return null;
@@ -284,14 +296,18 @@ function pickFormulationReply(params: {
     switch (params.key) {
       case "triggers":
         return "Det er mest i enkelte situasjoner… spesielt når jeg skal legge meg eller når det blir stille.";
-      case "worryThemes":
-        return "Det handler ofte om at noe skal gå galt… jobb, helse, familien. Jeg klarer ikke helt å peke på én ting.";
-      case "positiveBeliefs":
-        return "En del av meg føler at jeg må tenke gjennom alt for å være forberedt. Hvis jeg ikke gjør det, føles det uforsvarlig.";
-      case "uncontrollabilityBeliefs":
-        return "Jeg prøver å stoppe, men det bare fortsetter. Det kjennes som om det tar over.";
-      case "copingBehaviors":
-        return "Jeg ender ofte med å sjekke ting eller spørre andre… og så roer det seg litt, men bare en liten stund.";
+      case "whatIfThought":
+        return "Det starter ofte med en sånn ‘hva hvis…’ tanke… som at jeg har glemt noe viktig.";
+      case "worryChain":
+        return "Og så går det videre til ‘hva hvis det blir verre’… og så spinner det bare videre.";
+      case "emotions":
+        return "Jeg blir urolig og stressa… det strammer seg i kroppen.";
+      case "positiveMetaBelief":
+        return "En del av meg føler at jeg må tenke gjennom alt for å være forberedt.";
+      case "negativeMetaBelief":
+        return "Jeg blir også redd for at det aldri stopper… at det tar helt over.";
+      case "casStrategy":
+        return "Jeg ender ofte med å sjekke ting eller tenke gjennom det om og om igjen… bare for å få litt ro.";
       default:
         return "Jeg vet ikke helt… men jeg kjenner at jeg blir urolig og dras inn i det.";
     }
