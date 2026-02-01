@@ -1,4 +1,5 @@
 import type { DifficultyLevel, PatientState } from "../store/sessionStore";
+import { MCT_RULES_V1, type Phase } from "./mctRulesConfig";
 
 export type InterventionType = "sokratisk" | "eksperiment" | "mindfulness" | "verbal";
 
@@ -28,92 +29,58 @@ function clamp01to100(n: number) {
   return Math.max(0, Math.min(100, n));
 }
 
-function deriveCas(patientState: PatientState) {
+export function deriveCas(patientState: PatientState) {
   const uncontrollability = clamp01to100(patientState.beliefUncontrollability ?? 0);
   const threat = clamp01to100(patientState.beliefDanger ?? 0);
-  return clamp01to100(0.55 * uncontrollability + 0.45 * threat);
+  return clamp01to100(
+    MCT_RULES_V1.cas.uncontrollabilityWeight * uncontrollability +
+      MCT_RULES_V1.cas.threatWeight * threat,
+  );
 }
 
-type MctDifficultyProfile = {
-  id: DifficultyLevel;
-  label: string;
-  // Baseline tendency to return to higher CAS between turns ("stickiness").
-  casStickiness: number;
-  // How much content-focus tends to increase CAS.
-  contentCbtPenalty: number;
-  // How sensitive the patient is to early process interventions (DM/experiment) when meta-worry is high.
-  earlyProcessBackfireSensitivity: number;
-  // Global gain multiplier (lower = less therapeutic movement).
-  gain: number;
-};
-
-function getDifficultyProfile(difficultyLevel: DifficultyLevel): MctDifficultyProfile {
-  if (difficultyLevel === 1) {
-    return {
-      id: 1,
-      label: "Nivå 1 (samarbeidende / lav meta-worry)",
-      casStickiness: 0.15,
-      contentCbtPenalty: 2,
-      earlyProcessBackfireSensitivity: 0.15,
-      gain: 1,
-    };
-  }
-  if (difficultyLevel === 2) {
-    return {
-      id: 2,
-      label: "Nivå 2 (fastlåst CAS / ruminerer lett)",
-      casStickiness: 0.35,
-      contentCbtPenalty: 8,
-      earlyProcessBackfireSensitivity: 0.35,
-      gain: 0.7,
-    };
-  }
-  return {
-    id: 3,
-    label: "Nivå 3 (høy meta-worry / tidlig backfire)",
-    casStickiness: 0.55,
-    contentCbtPenalty: 12,
-    earlyProcessBackfireSensitivity: 0.7,
-    gain: 0.55,
-  };
-}
-
-function inferEngagement(patientState: PatientState) {
+export function inferEngagement(patientState: PatientState) {
   // Heuristic: lower threat + lower uncontrollability => higher engagement
   const uncontrollability = clamp01to100(patientState.beliefUncontrollability ?? 0);
   const threat = clamp01to100(patientState.beliefDanger ?? 0);
-  return clamp01to100(100 - (0.6 * uncontrollability + 0.4 * threat));
+  return clamp01to100(
+    100 -
+      (MCT_RULES_V1.engagementProxy.uncontrollabilityWeight * uncontrollability +
+        MCT_RULES_V1.engagementProxy.threatWeight * threat),
+  );
 }
 
 function inferResistance(patientState: PatientState, difficultyLevel: DifficultyLevel) {
   const positiveBeliefs = clamp01to100(patientState.beliefPositive ?? 0);
   const cas = deriveCas(patientState);
 
-  const base = 0.45 * cas + 0.55 * positiveBeliefs;
-  const difficultyBump = difficultyLevel === 1 ? 0 : difficultyLevel === 2 ? 8 : 16;
+  const base =
+    MCT_RULES_V1.resistanceProxy.casWeight * cas +
+    MCT_RULES_V1.resistanceProxy.positiveBeliefsWeight * positiveBeliefs;
+  const difficultyBump = MCT_RULES_V1.resistanceProxy.difficultyBump[difficultyLevel];
   return clamp01to100(base + difficultyBump);
 }
 
-function inferMetaWorry(patientState: PatientState) {
+export function inferMetaWorry(patientState: PatientState) {
   // Proxy: uncontrollability belief + positive beliefs about worry.
   const uncontrollability = clamp01to100(patientState.beliefUncontrollability ?? 0);
   const positiveBeliefs = clamp01to100(patientState.beliefPositive ?? 0);
-  return clamp01to100(0.65 * uncontrollability + 0.35 * positiveBeliefs);
+  return clamp01to100(
+    MCT_RULES_V1.metaWorryProxy.uncontrollabilityWeight * uncontrollability +
+      MCT_RULES_V1.metaWorryProxy.positiveBeliefsWeight * positiveBeliefs,
+  );
 }
 
 function isContentCbtLike(interventionType: InterventionType) {
-  // In this simulator, these are treated as content-focused / reassurance-adjacent.
-  return interventionType === "sokratisk" || interventionType === "verbal";
+  return MCT_RULES_V1.interventions.contentCbtLike.includes(interventionType);
 }
 
 function isProcessMctLike(interventionType: InterventionType) {
-  // In this simulator, these are treated as process-focused / MCT-consistent.
-  return interventionType === "mindfulness" || interventionType === "eksperiment";
+  return MCT_RULES_V1.interventions.processMctLike.includes(interventionType);
 }
 
-function timingPhase(turnIndex: number) {
-  if (turnIndex < 2) return "early";
-  if (turnIndex < 6) return "mid";
+export function getTurnPhase(turnIndex: number): Phase {
+  if (turnIndex < MCT_RULES_V1.phase.earlyMaxTurnExclusive) return "early";
+  if (turnIndex < MCT_RULES_V1.phase.midMaxTurnExclusive) return "mid";
   return "late";
 }
 
@@ -127,6 +94,7 @@ function applyDirectCasDelta(next: Partial<PatientState>, deltaCas: number) {
 function buildSystemFeedback(params: {
   difficultyLevel: DifficultyLevel;
   turnIndex: number;
+  phase: Phase;
   interventionType: InterventionType;
   casBefore: number;
   casAfter: number;
@@ -136,11 +104,10 @@ function buildSystemFeedback(params: {
     earlyProcessBackfire: boolean;
   };
 }) {
-  const phase = timingPhase(params.turnIndex);
   const deltaCas = Math.round((params.casAfter - params.casBefore) * 10) / 10;
 
   const lines: string[] = [];
-  lines.push(`System: ${phase} turn • Difficulty ${params.difficultyLevel}`);
+  lines.push(`System: ${params.phase} turn • Difficulty ${params.difficultyLevel}`);
   lines.push(`MCT-score (CAS): ${deltaCas <= 0 ? "" : "+"}${deltaCas} (målet er negativt)`);
   lines.push(`Meta-worry (proxy): ${Math.round(params.metaWorryBefore)}`);
 
@@ -187,8 +154,11 @@ function pickReply(params: {
   );
   const positive = clamp01to100((nextState.beliefPositive ?? patientState.beliefPositive) ?? 0);
 
-  const metaWorry = clamp01to100(0.65 * uncontrollability + 0.35 * positive);
-  const highMetaWorry = metaWorry >= 65;
+  const metaWorry = clamp01to100(
+    MCT_RULES_V1.metaWorryProxy.uncontrollabilityWeight * uncontrollability +
+      MCT_RULES_V1.metaWorryProxy.positiveBeliefsWeight * positive,
+  );
+  const highMetaWorry = metaWorry >= MCT_RULES_V1.metaWorryProxy.highThreshold;
 
   const suffixByDifficulty: Record<DifficultyLevel, string> = {
     1: "",
@@ -263,16 +233,19 @@ export function simulateGadPatientTurn(input: PatientTurnInput): PatientTurnOutp
   const { difficultyLevel, interventionType, patientState } = input;
 
   const turnIndex = input.turnIndex ?? 0;
+  const phase = getTurnPhase(turnIndex);
 
-  const profile = getDifficultyProfile(difficultyLevel);
+  const profile = MCT_RULES_V1.difficultyProfiles[difficultyLevel];
   const resistance = inferResistance(patientState, difficultyLevel);
   const engagement = inferEngagement(patientState);
 
-  // Difficulty 1: more cooperative, low meta-worry -> slightly easier to engage.
-  const engagementBoost = difficultyLevel === 1 ? 10 : 0;
+  const engagementBoost = profile.engagementBoost;
 
   // Convert to a 0..1 "cooperation" scalar: high resistance reduces effect sizes.
-  const cooperation = clamp01to100(engagement + engagementBoost - 0.6 * resistance) / 100;
+  const cooperation =
+    clamp01to100(
+      engagement + engagementBoost - MCT_RULES_V1.cooperation.resistanceWeight * resistance,
+    ) / 100;
 
   const metaWorry = inferMetaWorry(patientState);
   const casBefore = deriveCas(patientState);
@@ -287,38 +260,41 @@ export function simulateGadPatientTurn(input: PatientTurnInput): PatientTurnOutp
 
   // Baseline CAS stickiness: higher difficulty tends to creep CAS back up, especially when meta-worry is high.
   const metaWorryDrive = (metaWorry - 50) / 50; // approx -1..+1
-  const drift = profile.casStickiness * 6 * Math.max(0, metaWorryDrive);
+  const drift = profile.casStickiness * MCT_RULES_V1.drift.baseMultiplier * Math.max(0, metaWorryDrive);
   deltaCas += drift;
 
   // Intervention effects: process vs content.
   if (isProcessMctLike(interventionType)) {
     // Process-focus can reduce CAS, scaled by cooperation and difficulty.
-    const base = interventionType === "mindfulness" ? -10 : -9;
-    deltaCas += base;
+    deltaCas += MCT_RULES_V1.interventions.processDeltaCas[interventionType] ?? 0;
     // Successful process work tends to weaken positive beliefs about worry.
-    deltaPositive += interventionType === "mindfulness" ? -2 : -1;
+    deltaPositive += MCT_RULES_V1.interventions.processDeltaPositive[interventionType] ?? 0;
   } else {
     // Content-focus is not rewarded: often increases CAS via rumination/monitoring.
     contentCbtPenalty = difficultyLevel >= 2;
-    const base = difficultyLevel === 1 ? +1.5 : profile.contentCbtPenalty;
+    const base =
+      difficultyLevel === 1 ? MCT_RULES_V1.interventions.contentLevel1DeltaCas : profile.contentCbtPenalty;
     deltaCas += base;
     // Content focus can reinforce "worry is useful" especially in level 2-3.
-    deltaPositive += difficultyLevel === 1 ? 0 : +2;
+    deltaPositive += difficultyLevel === 1 ? 0 : MCT_RULES_V1.interventions.contentDeltaPositive;
   }
 
   // Timing-sensitive backfire: level 3 early DM/experiment when meta-worry is high.
-  const isEarly = timingPhase(turnIndex) === "early";
-  const highMetaWorry = metaWorry >= 65;
-  if (difficultyLevel === 3 && isEarly && highMetaWorry && isProcessMctLike(interventionType)) {
+  const backfireCfg = MCT_RULES_V1.backfire.level3;
+  const isEarly = phase === "early";
+  const highMetaWorry = metaWorry >= MCT_RULES_V1.metaWorryProxy.highThreshold;
+  const backfireAllowedByPhase = backfireCfg.earlyPhaseOnly ? isEarly : true;
+  const backfireAllowedByMeta = backfireCfg.requiredHighMetaWorry ? highMetaWorry : true;
+  if (difficultyLevel === 3 && backfireAllowedByPhase && backfireAllowedByMeta && isProcessMctLike(interventionType)) {
     earlyProcessBackfire = true;
     // Backfire: they start monitoring/controlling the technique -> CAS spikes and uncontrollability belief rises.
-    deltaCas += 18 * profile.earlyProcessBackfireSensitivity;
+    deltaCas += backfireCfg.extraDeltaCas * profile.earlyProcessBackfireSensitivity;
     // Also temporarily strengthens positive belief about worry/control attempts.
-    deltaPositive += 3;
+    deltaPositive += backfireCfg.extraDeltaPositive;
   }
 
   // Apply gain + cooperation. Key: reward CAS reduction regardless of the "quality" of therapist wording.
-  const scale = profile.gain * (0.35 + 0.65 * cooperation);
+  const scale = profile.gain * (MCT_RULES_V1.cooperation.minScale + MCT_RULES_V1.cooperation.maxScale * cooperation);
   const scaledDeltaCas = deltaCas * scale;
   const scaledDeltaPositive = deltaPositive * scale;
 
@@ -351,6 +327,7 @@ export function simulateGadPatientTurn(input: PatientTurnInput): PatientTurnOutp
   const systemFeedback = buildSystemFeedback({
     difficultyLevel,
     turnIndex,
+    phase,
     interventionType,
     casBefore,
     casAfter,

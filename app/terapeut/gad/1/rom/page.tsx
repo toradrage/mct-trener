@@ -6,6 +6,7 @@ import {
   simulateGadPatientTurn,
   type InterventionType,
 } from "../../../../../simulator/patientSimulator";
+import DevDebugPanel from "./DevDebugPanel";
 import TherapyRoomHUD from "./TherapyRoomHUD";
 import TherapyRoomScene from "./TherapyRoomScene";
 
@@ -97,7 +98,13 @@ export default function Terapirom() {
     });
     addIntervention({
       type: interventionType,
-      payload: { text, sim: sim.signals, systemFeedback: sim.systemFeedback, nextState },
+      payload: {
+        text,
+        sim: sim.signals,
+        systemFeedback: sim.systemFeedback,
+        prevState: patientState,
+        nextState,
+      },
       timestamp: now,
     });
     setPatientState(nextState);
@@ -120,6 +127,8 @@ export default function Terapirom() {
   return (
     <main className="root">
       <TherapyRoomScene avatarSrc={avatarSrc} showSpeech={visPasientSvar} speechText={pasientSvar} />
+
+      <DevDebugPanel />
 
       <TherapyRoomHUD
         scenarioLabel="Scenario: GAD – nivå 1"
