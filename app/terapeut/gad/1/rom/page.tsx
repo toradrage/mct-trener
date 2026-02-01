@@ -201,6 +201,35 @@ export default function Terapirom() {
     <main className="root">
       <TherapyRoomScene avatarSrc={avatarSrc} showSpeech={visPasientSvar} speechText={pasientSvar} />
 
+      {process.env.NODE_ENV === "development" && (
+        <div
+          aria-label="RAW patient reply (debug)"
+          style={{
+            position: "fixed",
+            left: 16,
+            right: 16,
+            bottom: 96,
+            zIndex: 99999,
+            background: "#111",
+            color: "#fff",
+            opacity: 1,
+            padding: "14px 16px",
+            border: "2px solid #fff",
+            borderRadius: 8,
+            fontSize: 16,
+            lineHeight: 1.6,
+            maxWidth: 820,
+            margin: "0 auto",
+            pointerEvents: "auto",
+          }}
+        >
+          <div style={{ fontWeight: 800, marginBottom: 8 }}>
+            RAW PATIENT REPLY (debug) — {visPasientSvar ? "visible" : "hidden"}
+          </div>
+          <div style={{ whiteSpace: "pre-wrap" }}>{pasientSvar || "(empty)"}</div>
+        </div>
+      )}
+
       <DevDebugPanel />
 
       <TherapyRoomHUD
