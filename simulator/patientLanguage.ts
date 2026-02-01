@@ -7,7 +7,7 @@ export type PatientVoiceOptions = {
 
 export type PatientSpeechCalibrationOptions = PatientVoiceOptions & {
   /** Optional phase for stricter early-session language. */
-  phase?: "early" | "mid" | "late";
+  phase?: "formulation" | "early" | "mid" | "late";
   /** Maximum number of sentences to keep. Defaults vary by phase. */
   maxSentences?: number;
   /** Maximum characters to keep. Defaults vary by phase. */
@@ -110,9 +110,10 @@ function stripOvertInsightPhrases(text: string) {
   return t.trim();
 }
 
-function fallbackPatientUtterance(phase?: "early" | "mid" | "late") {
+function fallbackPatientUtterance(phase?: "formulation" | "early" | "mid" | "late") {
   if (phase === "late") return "Jeg vet ikke… men det føles litt lettere i kroppen.";
   if (phase === "mid") return "Jeg vet ikke… men jeg kjenner at jeg blir urolig og dras inn i det.";
+  if (phase === "formulation") return "Jeg vet ikke… men jeg blir veldig urolig, og det tar fort helt av.";
   // early default: confusion + intensity/impulse/consequence (not empty).
   return "Jeg vet ikke… men jeg blir veldig urolig, og det tar fort helt av.";
 }
@@ -127,7 +128,7 @@ function hasExperienceAnchor(text: string) {
   );
 }
 
-function anchorUncertainty(text: string, phase?: "early" | "mid" | "late") {
+function anchorUncertainty(text: string, phase?: "formulation" | "early" | "mid" | "late") {
   let t = (text ?? "").trim();
   if (!t) return t;
 
@@ -136,13 +137,14 @@ function anchorUncertainty(text: string, phase?: "early" | "mid" | "late") {
   if (hasExperienceAnchor(t)) return t;
 
   // Append an experiential anchor without adding insight/mechanism.
-  const tailByPhase: Record<"early" | "mid" | "late", string> = {
+  const tailByPhase: Record<"formulation" | "early" | "mid" | "late", string> = {
+    formulation: "… men jeg blir veldig urolig, og det tar fort helt av.",
     early: "… men jeg blir veldig urolig, og det tar fort helt av.",
     mid: "… men jeg kjenner at jeg blir urolig og dras inn i det.",
     late: "… men jeg kjenner det i kroppen, og det er litt mindre intenst.",
   };
 
-  const p: "early" | "mid" | "late" = phase ?? "mid";
+  const p: "formulation" | "early" | "mid" | "late" = phase ?? "mid";
 
   // Avoid doubling punctuation if the model already added ellipsis.
   if (/…\s*$/.test(t)) {
@@ -160,12 +162,13 @@ export function calibratePatientSpeech(
 ): string {
   const phase = opts.phase;
   const defaultsByPhase = {
+    formulation: { maxSentences: 1, maxChars: 110 },
     early: { maxSentences: 1, maxChars: 110 },
     mid: { maxSentences: 1, maxChars: 140 },
     late: { maxSentences: 2, maxChars: 180 },
   } as const;
 
-  const defaults = phase ? defaultsByPhase[phase] : { maxSentences: 1, maxChars: 140 };
+  const defaults = phase ? (defaultsByPhase as any)[phase] : { maxSentences: 1, maxChars: 140 };
   const maxSentences = opts.maxSentences ?? defaults.maxSentences;
   const maxChars = opts.maxChars ?? defaults.maxChars;
 

@@ -14,6 +14,50 @@ export type PatientTurnInput = {
   turnIndex?: number;
 };
 
+export type SessionPhase = "formulation" | Phase;
+
+export const FORMULATION_CHECKLIST = [
+  "triggers",
+  "worryThemes",
+  "positiveBeliefs",
+  "uncontrollabilityBeliefs",
+  "copingBehaviors",
+] as const;
+
+export type FormulationKey = (typeof FORMULATION_CHECKLIST)[number];
+
+function getFormulationState(patientState: PatientState): {
+  asked: Record<FormulationKey, boolean>;
+  complete: boolean;
+  therapyTurnBase: number | null;
+} {
+  const rawAsked = ((patientState as any).simFormulationAsked ?? {}) as Partial<Record<FormulationKey, boolean>>;
+  const asked = FORMULATION_CHECKLIST.reduce((acc, k) => {
+    acc[k] = Boolean(rawAsked[k]);
+    return acc;
+  }, {} as Record<FormulationKey, boolean>);
+
+  const complete = Boolean((patientState as any).simFormulationComplete);
+  const therapyTurnBase =
+    typeof (patientState as any).simTherapyTurnBase === "number" ? (patientState as any).simTherapyTurnBase : null;
+
+  return { asked, complete, therapyTurnBase };
+}
+
+export function getSessionPhase(turnIndex: number, patientState: PatientState): SessionPhase {
+  const f = getFormulationState(patientState);
+  if (!f.complete) return "formulation";
+  const base = f.therapyTurnBase ?? 0;
+  const therapyTurn = Math.max(0, turnIndex - base);
+  return getTurnPhase(therapyTurn);
+}
+
+export function getFormulationProgress(patientState: PatientState) {
+  const f = getFormulationState(patientState);
+  const done = FORMULATION_CHECKLIST.filter((k) => f.asked[k]).length;
+  return { done, total: FORMULATION_CHECKLIST.length, complete: f.complete, asked: f.asked };
+}
+
 export type PatientTurnOutput = {
   nextPatientState: Partial<PatientState>;
   patientReply: string;
@@ -132,7 +176,7 @@ function updateLearnedEngagement(params: {
 function buildSystemFeedback(params: {
   difficultyLevel: DifficultyLevel;
   turnIndex: number;
-  phase: Phase;
+  phase: SessionPhase;
   interventionType: InterventionType;
   casBefore: number;
   casAfter: number;
@@ -150,7 +194,16 @@ function buildSystemFeedback(params: {
   const deltaCas = Math.round((params.casAfter - params.casBefore) * 10) / 10;
 
   const lines: string[] = [];
-  lines.push(`System: ${params.phase} turn • Difficulty ${params.difficultyLevel}`);
+  lines.push(`System: ${params.phase} • Difficulty ${params.difficultyLevel}`);
+
+  if (params.phase === "formulation") {
+    lines.push("Phase 1: Case formulation (GAD) — mål er kartlegging, ikke endring.");
+    lines.push("Lock: Ingen CAS-reduksjon forventes ennå; intervensjoner ‘virker’ ikke i denne fasen.");
+    const fp = getFormulationProgress((params as any).patientStateForFormulation ?? {});
+    if (fp && typeof fp.done === "number") {
+      lines.push(`Checklist: ${fp.done}/${fp.total} (triggers, themes, pos beliefs, uncontrollability, coping)`);
+    }
+  }
   lines.push(`MCT-score (CAS): ${deltaCas <= 0 ? "" : "+"}${deltaCas} (målet er negativt)`);
   lines.push(`Meta-worry (proxy): ${Math.round(params.metaWorryBefore)}`);
   lines.push(
@@ -178,6 +231,73 @@ function buildSystemFeedback(params: {
   }
 
   return lines.join("\n");
+}
+
+function detectFormulationKey(therapistText: string): FormulationKey | null {
+  const t = (therapistText ?? "").toLowerCase();
+  if (!t) return null;
+
+  // Triggers / context
+  if (
+    /(når|hvilke\s+situasjon|i\s+hvilke\s+situasjon|hva\s+setter\s+i\s+gang|utløser|trigger)/.test(t)
+  ) {
+    return "triggers";
+  }
+
+  // Worry themes / content (everyday wording)
+  if (
+    /(hva\s+bekymrer|hva\s+går\s+bekymring|hvilke\s+tanker|hva\s+er\s+du\s+redd\s+for|hva\s+kan\s+skje)/.test(t)
+  ) {
+    return "worryThemes";
+  }
+
+  // Positive beliefs about worry (helpful/prepared)
+  if (/(hjelp(er|e)|nyttig|forberedt|klar|kontroll|holde\s+oversikt)/.test(t)) {
+    return "positiveBeliefs";
+  }
+
+  // Uncontrollability beliefs / can't stop
+  if (/(klarer\s+du\s+å\s+stoppe|får\s+du\s+stoppet|ukontroller|slutter\s+det\s+av\s+seg\s+selv|mister\s+kontroll)/.test(t)) {
+    return "uncontrollabilityBeliefs";
+  }
+
+  // Coping / safety behaviors
+  if (/(hva\s+gjør\s+du\s+da|hvordan\s+håndter|sjekk(er|e)|forsikring|unngår|google|ringer|berolig)/.test(t)) {
+    return "copingBehaviors";
+  }
+
+  return null;
+}
+
+function pickFormulationReply(params: {
+  key: FormulationKey | null;
+  difficultyLevel: DifficultyLevel;
+  phase: SessionPhase;
+}) {
+  const suffix: Record<DifficultyLevel, string> = {
+    1: "",
+    2: " … og jeg blir fort dratt inn i det.",
+    3: " … og det tar fort helt av.",
+  };
+
+  const base = (() => {
+    switch (params.key) {
+      case "triggers":
+        return "Det er mest i enkelte situasjoner… spesielt når jeg skal legge meg eller når det blir stille.";
+      case "worryThemes":
+        return "Det handler ofte om at noe skal gå galt… jobb, helse, familien. Jeg klarer ikke helt å peke på én ting.";
+      case "positiveBeliefs":
+        return "En del av meg føler at jeg må tenke gjennom alt for å være forberedt. Hvis jeg ikke gjør det, føles det uforsvarlig.";
+      case "uncontrollabilityBeliefs":
+        return "Jeg prøver å stoppe, men det bare fortsetter. Det kjennes som om det tar over.";
+      case "copingBehaviors":
+        return "Jeg ender ofte med å sjekke ting eller spørre andre… og så roer det seg litt, men bare en liten stund.";
+      default:
+        return "Jeg vet ikke helt… men jeg kjenner at jeg blir urolig og dras inn i det.";
+    }
+  })();
+
+  return calibratePatientSpeech(base + suffix[params.difficultyLevel], { phase: "formulation" });
 }
 
 function pickReply(params: {
@@ -264,7 +384,9 @@ export function simulateGadPatientTurn(input: PatientTurnInput): PatientTurnOutp
   const { difficultyLevel, interventionType, patientState } = input;
 
   const turnIndex = input.turnIndex ?? 0;
-  const phase = getTurnPhase(turnIndex);
+  const sessionPhase = getSessionPhase(turnIndex, patientState);
+  const formulation = getFormulationState(patientState);
+  const phaseForRules: Phase = sessionPhase === "formulation" ? "early" : sessionPhase;
 
   const profile = MCT_RULES_V1.difficultyProfiles[difficultyLevel];
   const resistance = inferResistance(patientState, difficultyLevel);
@@ -285,6 +407,76 @@ export function simulateGadPatientTurn(input: PatientTurnInput): PatientTurnOutp
 
   let contentCbtPenalty = false;
   let earlyProcessBackfire = false;
+
+  // Phase 1: Case formulation (no interventions work yet; no CAS reduction expected).
+  if (sessionPhase === "formulation") {
+    const key = detectFormulationKey(input.therapistText);
+    const askedNext = { ...formulation.asked };
+    if (key) askedNext[key] = true;
+
+    const done = FORMULATION_CHECKLIST.filter((k) => askedNext[k]).length;
+    const completeNow = done >= FORMULATION_CHECKLIST.length;
+
+    // Minimal state movement: allow slight upward drift (talking about problems), but do not allow CAS reduction.
+    const nextPatientState: Partial<PatientState> = {
+      simFormulationAsked: askedNext,
+      simFormulationComplete: formulation.complete || completeNow,
+      // When formulation becomes complete, start therapy phase turn counting next turn.
+      simTherapyTurnBase:
+        formulation.therapyTurnBase ?? (completeNow ? turnIndex + 1 : null) ?? undefined,
+    };
+
+    // Add a small drift upwards (scaled by difficulty) so CAS doesn't accidentally drop.
+    const drift = Math.max(0, profile.casStickiness) * 1.1;
+    nextPatientState.beliefUncontrollability = clamp01to100((patientState.beliefUncontrollability ?? 0) + drift);
+    nextPatientState.beliefDanger = clamp01to100((patientState.beliefDanger ?? 0) + drift);
+    nextPatientState.beliefPositive = clamp01to100((patientState.beliefPositive ?? 0) + drift * 0.3);
+
+    // Enforce: no CAS reduction in formulation.
+    const casAfter0 = deriveCas({ ...patientState, ...nextPatientState });
+    if (casAfter0 < casBefore) {
+      applyDirectCasDelta(nextPatientState, casBefore - casAfter0);
+    }
+
+    const casAfter = deriveCas({ ...patientState, ...nextPatientState });
+    const deltaCasObserved = casAfter - casBefore;
+
+    const patientReply = pickFormulationReply({ key, difficultyLevel, phase: sessionPhase });
+
+    const systemFeedback = buildSystemFeedback({
+      difficultyLevel,
+      turnIndex,
+      phase: sessionPhase,
+      interventionType,
+      casBefore,
+      casAfter,
+      metaWorryBefore: metaWorry,
+      deltas: {
+        threat: (nextPatientState.beliefDanger ?? 0) - (patientState.beliefDanger ?? 0),
+        uncontrollability:
+          (nextPatientState.beliefUncontrollability ?? 0) - (patientState.beliefUncontrollability ?? 0),
+        positive: (nextPatientState.beliefPositive ?? 0) - (patientState.beliefPositive ?? 0),
+      },
+      flags: {
+        contentCbtPenalty: false,
+        earlyProcessBackfire: false,
+      },
+      // Provide patientState for formulation progress display.
+      patientStateForFormulation: { ...patientState, simFormulationAsked: askedNext, simFormulationComplete: formulation.complete || completeNow },
+    } as any);
+
+    return {
+      nextPatientState,
+      patientReply,
+      systemFeedback,
+      signals: {
+        resistance: clamp01to100(resistance),
+        engagement: clamp01to100(engagement),
+        cas: casAfter,
+        deltaCas: Math.round(deltaCasObserved * 10) / 10,
+      },
+    };
+  }
 
   // Baseline CAS stickiness: higher difficulty tends to creep CAS back up, especially when meta-worry is high.
   const metaWorryDrive = (metaWorry - 50) / 50; // approx -1..+1
@@ -313,7 +505,7 @@ export function simulateGadPatientTurn(input: PatientTurnInput): PatientTurnOutp
 
   // Timing-sensitive backfire: level 3 early DM/experiment when meta-worry is high.
   const backfireCfg = MCT_RULES_V1.backfire.level3;
-  const isEarly = phase === "early";
+  const isEarly = phaseForRules === "early";
   const highMetaWorry = metaWorry >= MCT_RULES_V1.metaWorryProxy.highThreshold;
   const backfireAllowedByPhase = backfireCfg.earlyPhaseOnly ? isEarly : true;
   const backfireAllowedByMeta = backfireCfg.requiredHighMetaWorry ? highMetaWorry : true;
@@ -368,13 +560,13 @@ export function simulateGadPatientTurn(input: PatientTurnInput): PatientTurnOutp
       earlyProcessBackfire,
     },
     }),
-    { phase },
+    { phase: phaseForRules },
   );
 
   const systemFeedback = buildSystemFeedback({
     difficultyLevel,
     turnIndex,
-    phase,
+    phase: phaseForRules,
     interventionType,
     casBefore,
     casAfter,

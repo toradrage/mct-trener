@@ -4,6 +4,8 @@ import { useEffect, useMemo, useState } from "react";
 import { useSessionStore } from "../../../../../store/sessionStore";
 import {
   getTurnPhase,
+  getFormulationProgress,
+  getSessionPhase,
   simulateGadPatientTurn,
   type InterventionType,
 } from "../../../../../simulator/patientSimulator";
@@ -49,6 +51,15 @@ export default function Terapirom() {
   const [visPasientSvar, setVisPasientSvar] = useState(false);
   const [pasientSvar, setPasientSvar] = useState<string>("");
 
+  const uiTurnIndex = useMemo(
+    () => messages.filter((m) => m.sender === "therapist").length,
+    [messages],
+  );
+  const uiPhase = useMemo(
+    () => getSessionPhase(uiTurnIndex, patientState),
+    [uiTurnIndex, patientState],
+  );
+
   useEffect(() => {
     if (sessionStatus === "not-started") setSessionStatus("in-progress");
   }, [sessionStatus, setSessionStatus]);
@@ -75,7 +86,7 @@ export default function Terapirom() {
   async function tryParaphraseWithLlm(params: {
     rulesReply: string;
     systemFeedback: string;
-    phase: "early" | "mid" | "late";
+    phase: "formulation" | "early" | "mid" | "late";
     interventionType: InterventionType;
     patientState: {
       beliefUncontrollability: number;
@@ -126,7 +137,7 @@ export default function Terapirom() {
 
     const now = Date.now();
     const turnIndex = messages.filter((m) => m.sender === "therapist").length;
-    const phase = getTurnPhase(turnIndex);
+    const phase = getSessionPhase(turnIndex, patientState);
 
     const sim = simulateGadPatientTurn({
       disorder: "GAD",
@@ -204,7 +215,13 @@ export default function Terapirom() {
       <DevDebugPanel />
 
       <TherapyRoomHUD
-        scenarioLabel="Scenario: GAD – nivå 1"
+        scenarioLabel={(() => {
+          if (uiPhase === "formulation") {
+            const fp = getFormulationProgress(patientState);
+            return `Fase 1: Kartlegging (GAD) • ${fp.done}/${fp.total}`;
+          }
+          return `Fase 2: Intervensjon (GAD) • ${uiPhase}`;
+        })()}
         onExit={handleExit}
         metrics={metrics}
         messages={messages}

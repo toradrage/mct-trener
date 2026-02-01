@@ -3,7 +3,13 @@
 import { useMemo } from "react";
 import { useSessionStore } from "../../../../../store/sessionStore";
 import { MCT_RULES_V1 } from "../../../../../simulator/mctRulesConfig";
-import { deriveCas, getTurnPhase, inferEngagement, inferMetaWorry } from "../../../../../simulator/patientSimulator";
+import {
+  deriveCas,
+  getFormulationProgress,
+  getSessionPhase,
+  inferEngagement,
+  inferMetaWorry,
+} from "../../../../../simulator/patientSimulator";
 
 function clamp01to100(n: number) {
   return Math.max(0, Math.min(100, n));
@@ -26,7 +32,8 @@ export default function DevDebugPanel() {
     const metaWorry = inferMetaWorry(patientState);
 
     const turnIndex = messages.filter((m) => m.sender === "therapist").length;
-    const phase = getTurnPhase(turnIndex);
+    const phase = getSessionPhase(turnIndex, patientState);
+    const formulation = getFormulationProgress(patientState);
 
     const last = interventions[interventions.length - 1];
     const payload = (last?.payload ?? {}) as any;
@@ -44,6 +51,7 @@ export default function DevDebugPanel() {
       metaWorry,
       phase,
       turnIndex,
+      formulation,
       beliefs: {
         threat: clamp01to100(patientState.beliefDanger ?? 0),
         uncontrollability: clamp01to100(patientState.beliefUncontrollability ?? 0),
@@ -92,6 +100,12 @@ export default function DevDebugPanel() {
           D{difficultyLevel} • {data.phase} • t{data.turnIndex}
         </span>
       </div>
+
+      {data.phase === "formulation" ? (
+        <div style={{ marginBottom: 10, opacity: 0.9 }}>
+          Phase 1 checklist: {data.formulation.done}/{data.formulation.total}
+        </div>
+      ) : null}
 
       <label style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 10 }}>
         <input
