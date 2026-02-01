@@ -72,6 +72,51 @@ export default function Terapirom() {
     router.push("/terapeut/gad/1/rom/review");
   }
 
+  async function tryParaphraseWithLlm(params: {
+    rulesReply: string;
+    systemFeedback: string;
+    phase: "early" | "mid" | "late";
+    interventionType: InterventionType;
+    patientState: {
+      beliefUncontrollability: number;
+      beliefDanger: number;
+      beliefPositive: number;
+      simEngagement?: number;
+      simCasDeltaEma?: number;
+    };
+  }): Promise<string | null> {
+    // Keep UX snappy: if LLM doesn't respond fast, fall back to rules text.
+    const budgetMs = 900;
+
+    try {
+      const controller = new AbortController();
+      const t = window.setTimeout(() => controller.abort(), budgetMs);
+
+      const res = await fetch("/api/llm/paraphrase", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          rulesReply: params.rulesReply,
+          systemFeedback: params.systemFeedback,
+          phase: params.phase,
+          interventionType: params.interventionType,
+          difficultyLevel,
+          patientState: params.patientState,
+        }),
+        signal: controller.signal,
+      });
+
+      window.clearTimeout(t);
+
+      if (!res.ok) return null;
+      const json = (await res.json()) as any;
+      const reply = typeof json?.reply === "string" ? json.reply.trim() : "";
+      return json?.ok && reply ? reply : null;
+    } catch {
+      return null;
+    }
+  }
+
   async function handleSend(e: React.FormEvent) {
     e.preventDefault();
     if (!interventionType) return;
@@ -114,22 +159,18 @@ export default function Terapirom() {
 
     setMelding("");
 
-    let reply = sim.patientReply;
+    // Always show something immediately (rules reply), then optionally swap to LLM paraphrase.
+    const rulesReply = sim.patientReply;
+    setPasientSvar(rulesReply);
+    setVisPasientSvar(true);
 
-    if (llmEnabled) {
-      try {
-        const controller = new AbortController();
-        const t = window.setTimeout(() => controller.abort(), 2400);
-
-        const res = await fetch("/api/llm/paraphrase", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            rulesReply: sim.patientReply,
+    const paraphrasePromise =
+      llmEnabled
+        ? tryParaphraseWithLlm({
+            rulesReply,
             systemFeedback: sim.systemFeedback,
             phase,
             interventionType,
-            difficultyLevel,
             patientState: {
               beliefUncontrollability: nextState.beliefUncontrollability,
               beliefDanger: nextState.beliefDanger,
@@ -137,28 +178,18 @@ export default function Terapirom() {
               simEngagement: (nextState as any).simEngagement,
               simCasDeltaEma: (nextState as any).simCasDeltaEma,
             },
-          }),
-          signal: controller.signal,
-        });
+          })
+        : Promise.resolve(null);
 
-        window.clearTimeout(t);
+    // Ensure we never have "silent turns": push exactly one patient message every time.
+    window.setTimeout(async () => {
+      const paraphrased = await paraphrasePromise;
+      const finalReply = paraphrased ?? rulesReply;
 
-        if (res.ok) {
-          const json = (await res.json()) as any;
-          if (json?.ok && typeof json.reply === "string" && json.reply.trim()) {
-            reply = json.reply.trim();
-          }
-        }
-      } catch {
-        // Silent fallback to rules-only reply.
-      }
-    }
+      // Update the speech bubble to match what we push to the chat log.
+      setPasientSvar(finalReply);
 
-    setPasientSvar(reply);
-    setVisPasientSvar(true);
-
-    window.setTimeout(() => {
-      addMessage({ sender: "patient", text: reply, timestamp: Date.now() });
+      addMessage({ sender: "patient", text: finalReply, timestamp: Date.now() });
     }, 350);
 
     window.setTimeout(() => {
