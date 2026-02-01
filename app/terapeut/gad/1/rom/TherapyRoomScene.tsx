@@ -16,6 +16,7 @@ export default function TherapyRoomScene(props: {
         <div className="vignette" />
         <div className="room" />
         <div className="lightRays" />
+        <div className="groundLight" />
       </div>
 
       {/* midground: patient */}
@@ -98,6 +99,8 @@ export default function TherapyRoomScene(props: {
               rgba(2, 6, 23, 0.98) 100%
             );
           filter: saturate(1.05);
+          transform: translate3d(0, 0, 0);
+          animation: roomDrift 18s ease-in-out infinite alternate;
         }
 
         /* Floor plane (2.5D) */
@@ -153,6 +156,26 @@ export default function TherapyRoomScene(props: {
           opacity: 0.55;
           mix-blend-mode: screen;
           pointer-events: none;
+          animation: raysDrift 14s ease-in-out infinite alternate;
+        }
+
+        .groundLight {
+          position: absolute;
+          left: 50%;
+          bottom: -6%;
+          transform: translateX(-50%);
+          width: min(980px, 96vw);
+          height: min(520px, 50vh);
+          background: radial-gradient(
+            ellipse at 50% 25%,
+            rgba(255, 251, 235, 0.10) 0%,
+            rgba(59, 130, 246, 0.07) 35%,
+            rgba(0, 0, 0, 0) 70%
+          );
+          filter: blur(10px);
+          opacity: 0.95;
+          mix-blend-mode: screen;
+          pointer-events: none;
         }
 
         /* Mid layer: stage + patient */
@@ -170,6 +193,7 @@ export default function TherapyRoomScene(props: {
           position: relative;
           transform-style: preserve-3d;
           transform: rotateX(10deg) translateY(10px);
+          animation: cameraDrift 12s ease-in-out infinite alternate;
         }
 
         .floorShadow {
@@ -181,13 +205,13 @@ export default function TherapyRoomScene(props: {
           height: 22%;
           background: radial-gradient(
             ellipse at center,
-            rgba(0, 0, 0, 0.46) 0%,
-            rgba(0, 0, 0, 0.18) 42%,
+            rgba(0, 0, 0, 0.58) 0%,
+            rgba(0, 0, 0, 0.22) 42%,
             rgba(0, 0, 0, 0) 74%
           );
           filter: blur(14px);
           border-radius: 999px;
-          opacity: 0.78;
+          opacity: 0.85;
         }
 
         .patientActor {
@@ -236,6 +260,26 @@ export default function TherapyRoomScene(props: {
           transform: translateZ(22px);
         }
 
+        .patientCard::after {
+          content: "";
+          position: absolute;
+          left: 50%;
+          bottom: 10px;
+          transform: translateX(-50%);
+          width: 72%;
+          height: 18px;
+          border-radius: 999px;
+          background: radial-gradient(
+            ellipse at center,
+            rgba(0, 0, 0, 0.55) 0%,
+            rgba(0, 0, 0, 0.18) 50%,
+            rgba(0, 0, 0, 0) 78%
+          );
+          filter: blur(6px);
+          opacity: 0.65;
+          pointer-events: none;
+        }
+
         .patientImg {
           border-radius: 18px;
           border: 1px solid rgba(255, 255, 255, 0.22);
@@ -259,8 +303,8 @@ export default function TherapyRoomScene(props: {
             rgba(0, 0, 0, 0.20) 45%,
             rgba(0, 0, 0, 0) 78%
           );
-          filter: blur(8px);
-          opacity: 0.72;
+          filter: blur(10px);
+          opacity: 0.78;
         }
 
         .speechBubble {
@@ -325,6 +369,35 @@ export default function TherapyRoomScene(props: {
         }
         .animateBlink {
           animation: blink 4s infinite;
+        }
+
+        @keyframes roomDrift {
+          0% {
+            transform: translate3d(-6px, -4px, 0) scale(1.01);
+          }
+          100% {
+            transform: translate3d(8px, 6px, 0) scale(1.02);
+          }
+        }
+
+        @keyframes raysDrift {
+          0% {
+            transform: translate3d(10px, -6px, 0) rotate(-0.6deg);
+            opacity: 0.50;
+          }
+          100% {
+            transform: translate3d(-12px, 8px, 0) rotate(0.7deg);
+            opacity: 0.62;
+          }
+        }
+
+        @keyframes cameraDrift {
+          0% {
+            transform: rotateX(9.2deg) rotateZ(-0.35deg) translateY(8px) translateX(-6px);
+          }
+          100% {
+            transform: rotateX(10.6deg) rotateZ(0.35deg) translateY(12px) translateX(6px);
+          }
         }
 
         @media (max-width: 720px) {

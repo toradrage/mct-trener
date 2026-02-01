@@ -189,30 +189,30 @@ export default function TherapyRoomHUD(props: {
           position: absolute;
           left: 16px;
           right: 16px;
-          bottom: 14px;
+          bottom: 12px;
           display: grid;
-          gap: 10px;
+          gap: 8px;
           pointer-events: none;
         }
 
         .abilities {
           display: flex;
-          gap: 10px;
+          gap: 8px;
           overflow-x: auto;
           padding-bottom: 2px;
           pointer-events: auto;
         }
 
         .ability {
-          min-width: 220px;
+          min-width: 200px;
           text-align: left;
-          padding: 10px 12px;
+          padding: 8px 10px;
           border-radius: 16px;
-          background: rgba(255, 255, 255, 0.08);
-          border: 1px solid rgba(255, 255, 255, 0.14);
-          backdrop-filter: blur(16px);
+          background: rgba(255, 255, 255, 0.07);
+          border: 1px solid rgba(255, 255, 255, 0.12);
+          backdrop-filter: blur(18px);
           color: rgba(255, 255, 255, 0.92);
-          box-shadow: 0 16px 52px rgba(0, 0, 0, 0.28);
+          box-shadow: 0 12px 40px rgba(0, 0, 0, 0.24);
           cursor: pointer;
           transition: transform 0.15s, border-color 0.2s, background 0.2s;
         }
@@ -228,30 +228,30 @@ export default function TherapyRoomHUD(props: {
         .abilityTitle {
           font-weight: 900;
           letter-spacing: 0.1px;
-          font-size: 13px;
+          font-size: 12px;
           margin-bottom: 2px;
         }
         .abilityHint {
-          font-size: 12px;
+          font-size: 11px;
           color: rgba(255, 255, 255, 0.70);
         }
 
         .chat {
           display: grid;
           grid-template-columns: 1fr auto;
-          gap: 10px;
+          gap: 8px;
           pointer-events: auto;
         }
 
         .chatInput {
-          height: 44px;
+          height: 40px;
           padding: 0 14px;
           border-radius: 999px;
-          background: rgba(255, 255, 255, 0.10);
-          border: 1px solid rgba(255, 255, 255, 0.16);
+          background: rgba(255, 255, 255, 0.09);
+          border: 1px solid rgba(255, 255, 255, 0.14);
           color: rgba(255, 255, 255, 0.92);
-          backdrop-filter: blur(16px);
-          box-shadow: 0 18px 54px rgba(0, 0, 0, 0.30);
+          backdrop-filter: blur(18px);
+          box-shadow: 0 12px 42px rgba(0, 0, 0, 0.24);
           outline: none;
         }
         .chatInput::placeholder {
@@ -259,14 +259,14 @@ export default function TherapyRoomHUD(props: {
         }
 
         .chatSend {
-          height: 44px;
+          height: 40px;
           padding: 0 14px;
           border-radius: 999px;
           font-weight: 900;
           background: rgba(37, 99, 235, 0.86);
           border: 1px solid rgba(255, 255, 255, 0.18);
           color: white;
-          box-shadow: 0 20px 60px rgba(37, 99, 235, 0.18);
+          box-shadow: 0 14px 46px rgba(37, 99, 235, 0.16);
           cursor: pointer;
           transition: transform 0.15s, opacity 0.2s;
         }
@@ -284,7 +284,7 @@ export default function TherapyRoomHUD(props: {
             width: 200px;
           }
           .ability {
-            min-width: 190px;
+            min-width: 180px;
           }
         }
 
