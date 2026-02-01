@@ -3,6 +3,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { useSessionStore } from "../../../../../store/sessionStore";
 import {
+  getTurnPhase,
   simulateGadPatientTurn,
   type InterventionType,
 } from "../../../../../simulator/patientSimulator";
@@ -34,6 +35,7 @@ export default function Terapirom() {
     difficultyLevel,
     avatarProfile,
     messages,
+    llmEnabled,
     addMessage,
     addIntervention,
     patientState,
@@ -79,6 +81,7 @@ export default function Terapirom() {
 
     const now = Date.now();
     const turnIndex = messages.filter((m) => m.sender === "therapist").length;
+    const phase = getTurnPhase(turnIndex);
 
     const sim = simulateGadPatientTurn({
       disorder: "GAD",
@@ -111,7 +114,46 @@ export default function Terapirom() {
 
     setMelding("");
 
-    const reply = sim.patientReply;
+    let reply = sim.patientReply;
+
+    if (llmEnabled) {
+      try {
+        const controller = new AbortController();
+        const t = window.setTimeout(() => controller.abort(), 2400);
+
+        const res = await fetch("/api/llm/paraphrase", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            rulesReply: sim.patientReply,
+            systemFeedback: sim.systemFeedback,
+            phase,
+            interventionType,
+            difficultyLevel,
+            patientState: {
+              beliefUncontrollability: nextState.beliefUncontrollability,
+              beliefDanger: nextState.beliefDanger,
+              beliefPositive: nextState.beliefPositive,
+              simEngagement: (nextState as any).simEngagement,
+              simCasDeltaEma: (nextState as any).simCasDeltaEma,
+            },
+          }),
+          signal: controller.signal,
+        });
+
+        window.clearTimeout(t);
+
+        if (res.ok) {
+          const json = (await res.json()) as any;
+          if (json?.ok && typeof json.reply === "string" && json.reply.trim()) {
+            reply = json.reply.trim();
+          }
+        }
+      } catch {
+        // Silent fallback to rules-only reply.
+      }
+    }
+
     setPasientSvar(reply);
     setVisPasientSvar(true);
 

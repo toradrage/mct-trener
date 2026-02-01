@@ -15,7 +15,8 @@ function delta(a?: number, b?: number) {
 }
 
 export default function DevDebugPanel() {
-  const { patientState, interventions, messages, difficultyLevel } = useSessionStore();
+  const { patientState, interventions, messages, difficultyLevel, llmEnabled, setLlmEnabled } =
+    useSessionStore();
 
   const data = useMemo(() => {
     const cas = deriveCas(patientState);
@@ -91,6 +92,15 @@ export default function DevDebugPanel() {
           D{difficultyLevel} • {data.phase} • t{data.turnIndex}
         </span>
       </div>
+
+      <label style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 10 }}>
+        <input
+          type="checkbox"
+          checked={llmEnabled}
+          onChange={(e) => setLlmEnabled(e.target.checked)}
+        />
+        <span style={{ opacity: 0.9 }}>LLM paraphrase (A/B)</span>
+      </label>
 
       <div style={{ opacity: 0.85, marginBottom: 8 }}>
         Weights: CAS={MCT_RULES_V1.cas.uncontrollabilityWeight}/{MCT_RULES_V1.cas.threatWeight} •

@@ -36,11 +36,13 @@ export interface SessionState {
   interventions: InterventionEvent[];
   patientState: PatientState;
   sessionStatus: SessionStatus;
+  llmEnabled: boolean;
   setSession: (data: Partial<SessionState>) => void;
   addMessage: (msg: Message) => void;
   addIntervention: (event: InterventionEvent) => void;
   setPatientState: (state: Partial<PatientState>) => void;
   setSessionStatus: (status: SessionStatus) => void;
+  setLlmEnabled: (enabled: boolean) => void;
 }
 
 export const useSessionStore = create<SessionState>((set: (fn: (state: SessionState) => Partial<SessionState> | SessionState) => void) => ({
@@ -58,9 +60,11 @@ export const useSessionStore = create<SessionState>((set: (fn: (state: SessionSt
     mood: 'neutral',
   },
   sessionStatus: 'not-started',
+  llmEnabled: false,
   setSession: (data: Partial<SessionState>) => set((state: SessionState) => ({ ...state, ...data })),
   addMessage: (msg: Message) => set((state: SessionState) => ({ messages: [...state.messages, msg] })),
   addIntervention: (event: InterventionEvent) => set((state: SessionState) => ({ interventions: [...state.interventions, event] })),
   setPatientState: (newState: Partial<PatientState>) => set((state: SessionState) => ({ patientState: { ...state.patientState, ...newState } })),
   setSessionStatus: (status: SessionStatus) => set(() => ({ sessionStatus: status })),
+  setLlmEnabled: (enabled: boolean) => set(() => ({ llmEnabled: enabled })),
 }));
