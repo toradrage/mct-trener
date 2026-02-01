@@ -237,10 +237,10 @@ export default function TherapyRoomHUD(props: {
           pointer-events: auto;
           max-height: 170px;
           overflow: auto;
-          padding: 10px 10px;
+          padding: 12px 12px;
           border-radius: 16px;
-          background: rgba(255, 255, 255, 0.06);
-          border: 1px solid rgba(255, 255, 255, 0.10);
+          background: rgba(6, 10, 22, 0.70);
+          border: 1px solid rgba(255, 255, 255, 0.12);
           backdrop-filter: blur(16px);
           box-shadow: 0 12px 40px rgba(0, 0, 0, 0.20);
         }
@@ -264,19 +264,27 @@ export default function TherapyRoomHUD(props: {
         }
 
         .bubble {
-          max-width: min(720px, 78vw);
-          padding: 8px 10px;
-          border-radius: 14px;
-          line-height: 1.25;
-          font-size: 12px;
-          color: rgba(255, 255, 255, 0.92);
-          border: 1px solid rgba(255, 255, 255, 0.12);
-          background: rgba(15, 23, 42, 0.42);
+          /* readability */
+          max-width: min(540px, 84vw);
+          padding: 10px 12px;
+          border-radius: 16px;
+          line-height: 1.45;
+          font-size: 14px;
+          color: rgba(255, 255, 255, 0.95);
+          border: 1px solid rgba(255, 255, 255, 0.14);
+          background: rgba(10, 14, 26, 0.88);
+          box-shadow: 0 14px 44px rgba(0, 0, 0, 0.28);
+          text-wrap: pretty;
         }
 
         .chatLine.therapist .bubble {
-          background: rgba(37, 99, 235, 0.22);
-          border-color: rgba(59, 130, 246, 0.22);
+          background: rgba(16, 36, 86, 0.78);
+          border-color: rgba(99, 162, 255, 0.28);
+        }
+
+        .chatLine.patient .bubble {
+          background: rgba(10, 14, 26, 0.90);
+          border-color: rgba(255, 255, 255, 0.16);
         }
 
         .abilities {

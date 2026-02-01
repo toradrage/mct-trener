@@ -312,15 +312,17 @@ export default function TherapyRoomScene(props: {
           left: 50%;
           top: -18px;
           transform: translateX(-50%) translateZ(64px);
-          max-width: 520px;
-          padding: 12px 14px;
-          border-radius: 14px;
-          background: rgba(255, 255, 255, 0.12);
-          border: 1px solid rgba(255, 255, 255, 0.18);
-          box-shadow: 0 18px 60px rgba(0, 0, 0, 0.35);
-          color: rgba(255, 255, 255, 0.92);
+          max-width: min(560px, 84vw);
+          padding: 14px 16px;
+          border-radius: 16px;
+          background: rgba(10, 14, 26, 0.90);
+          border: 1px solid rgba(255, 255, 255, 0.16);
+          box-shadow: 0 22px 70px rgba(0, 0, 0, 0.45);
+          color: rgba(255, 255, 255, 0.96);
           backdrop-filter: blur(16px);
-          line-height: 1.25;
+          line-height: 1.45;
+          font-size: 15px;
+          text-wrap: pretty;
         }
 
         /* Foreground effects */
