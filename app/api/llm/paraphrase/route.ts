@@ -58,7 +58,9 @@ export async function POST(req: Request) {
         "- Ikke endre mening eller retning (kun språk).\n" +
         "- Ikke introduser nye fakta, nye symptomer eller nye hendelser.\n" +
         "- Ikke gi råd eller forklaringer; kun pasientens replikk.\n" +
-        "- 1–2 setninger, naturlig og litt uperfekt.\n" +
+        "- 1–2 setninger, naturlig og litt uperfekt. Gjerne nøling/uklarhet.\n" +
+        "- Bruk hverdagsspråk. Unngå terapeutiske begreper.\n" +
+        "- IKKE bruk ordene: prosess, analyse-modus, metakognisjon, CAS, monitorering.\n" +
         "- Ikke referer til at du er en AI, en modell eller at du parafraserer.\n\n" +
         "Kontekst (for tone, ikke for nye fakta):\n" +
         JSON.stringify(

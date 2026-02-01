@@ -199,23 +199,21 @@ function pickReply(params: {
   );
   const positive = clamp01to100((nextState.beliefPositive ?? patientState.beliefPositive) ?? 0);
 
-  const metaWorry = clamp01to100(
-    MCT_RULES_V1.metaWorryProxy.uncontrollabilityWeight * uncontrollability +
-      MCT_RULES_V1.metaWorryProxy.positiveBeliefsWeight * positive,
-  );
-  const highMetaWorry = metaWorry >= MCT_RULES_V1.metaWorryProxy.highThreshold;
-
   const suffixByDifficulty: Record<DifficultyLevel, string> = {
     1: "",
-    2: " Jeg merker at jeg lett blir dratt inn i det igjen.",
-    3: " Det kicker fort i gang hos meg nå.",
+    2: " Jeg blir fort dratt tilbake i det.",
+    3: " Det tar helt av i hodet mitt med en gang.",
   };
+
+  // IMPORTANT: Patient replies must be everyday speech.
+  // Never use terms like: "prosess", "analyse-modus", "metakognisjon", "CAS".
+  // Keep it short, vague, hesitant.
 
   if (flags.earlyProcessBackfire) {
     if (interventionType === "eksperiment" || interventionType === "mindfulness") {
       return (
-        "Når jeg prøver å gjøre det mer 'prosessorientert', begynner jeg å overvåke om jeg gjør det riktig. " +
-        "Da blir jeg redd for at bekymringen er ukontrollerbar, og CAS skyter i været." +
+        "Når jeg prøver å gjøre det på den måten, begynner jeg å kjenne etter hele tiden… " +
+        "og da blir jeg bare mer urolig." +
         suffixByDifficulty[difficultyLevel]
       );
     }
@@ -223,38 +221,30 @@ function pickReply(params: {
 
   if (flags.contentCbtPenalty) {
     return (
-      "Når vi går inn i innholdet, merker jeg at jeg begynner å analysere og sammenligne " +
-      "hele tiden. Det blir mer grubling/monitorering, og CAS tar mer plass." +
+      "Når vi går inn i detaljene, blir jeg bare mer usikker… " +
+      "jeg begynner å gruble med én gang." +
       suffixByDifficulty[difficultyLevel]
     );
   }
 
   if (interventionType === "mindfulness") {
-    if (highMetaWorry) {
-      return (
-        "Når jeg lar tankene være der uten å gå i gang med dem, kjenner jeg at trangen til å overvåke " +
-        "og kontrollere synker litt. Det er fortsatt ubehag, men jeg får et lite mellomrom." +
-        suffixByDifficulty[difficultyLevel]
-      );
-    }
     return (
-      "Det var uvant, men jeg klarte litt mer å observere bekymringstrangen uten å gå inn i den." +
+      "Det var litt rart, men i et lite øyeblikk klarte jeg å la det bare være." +
       suffixByDifficulty[difficultyLevel]
     );
   }
 
   if (interventionType === "eksperiment") {
     return (
-      "Ok, jeg kan prøve å utsette/ikke gjøre bekymringen med en gang. " +
-      "Jeg merker at CAS ikke tar fullt så mye plass når jeg ikke mater det." +
+      "Ok… jeg kan prøve å vente litt før jeg går helt inn i bekymringen. " +
+      "Men jeg er ikke sikker på om jeg får det til." +
       suffixByDifficulty[difficultyLevel]
     );
   }
 
   if (interventionType === "sokratisk") {
     return (
-      "Spørsmålene gjør at jeg legger merke til hvordan jeg går rett i analyse-modus. " +
-      "Jeg kan se litt tydeligere at det er prosessen som drar meg inn — ikke at jeg må finne et svar." +
+      "Jeg vet ikke helt… når vi spør sånn, blir jeg mest bare mer i tvil." +
       suffixByDifficulty[difficultyLevel]
     );
   }
@@ -262,14 +252,13 @@ function pickReply(params: {
   // verbal
   if (positive >= 55) {
     return (
-      "En del av meg tror fortsatt at bekymring hjelper meg å være forberedt. " +
-      "Da blir det vanskelig å ikke gå inn i den, selv om jeg ser at det koster." +
+      "Jeg føler litt at jeg må tenke gjennom alt for å være forberedt… " +
+      "så det er vanskelig å slippe." +
       suffixByDifficulty[difficultyLevel]
     );
   }
   return (
-    "Det gir mening. Kanskje jeg kan øve mer på å legge merke til CAS uten å følge det, " +
-    "i stedet for å prøve å få full kontroll på det." +
+    "Det gir litt mening… men jeg trenger nok å prøve det noen ganger før det sitter." +
     suffixByDifficulty[difficultyLevel]
   );
 }
