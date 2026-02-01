@@ -48,21 +48,44 @@ export type MctRulesConfig = {
   interventions: {
     contentCbtLike: ReadonlyArray<InterventionType>;
     processMctLike: ReadonlyArray<InterventionType>;
-    processDeltaCas: Record<InterventionType, number>; // only used for process-like types
+    processDeltaThreat: Record<InterventionType, number>; // only used for process-like types
+    processDeltaUncontrollability: Record<InterventionType, number>; // only used for process-like types
     processDeltaPositive: Record<InterventionType, number>; // only used for process-like types
-    contentLevel1DeltaCas: number;
-    contentDeltaPositive: number;
+    contentLevel1: {
+      deltaThreat: number;
+      deltaUncontrollability: number;
+      deltaPositive: number;
+    };
+    contentLevel2plus: {
+      deltaThreat: number;
+      deltaUncontrollability: number;
+      deltaPositive: number;
+    };
   };
   drift: {
     baseMultiplier: number;
+    uncontrollabilityWeight: number;
+    threatWeight: number;
   };
   backfire: {
     level3: {
       earlyPhaseOnly: boolean;
       requiredHighMetaWorry: boolean;
-      extraDeltaCas: number;
-      extraDeltaPositive: number;
+      // Always hits at least two state variables (U + T, plus often positive beliefs).
+      deltaUncontrollability: number;
+      deltaThreat: number;
+      deltaPositive: number;
     };
+  };
+  engagementLearning: {
+    // Store engagement as a learned state in patientState (not purely inferred each turn).
+    initialFromProxyWeight: number; // 0..1 blend between proxy and profile baseline
+    profileBaselineByDifficulty: Record<DifficultyLevel, number>;
+    casDeltaEmaAlpha: number; // 0..1
+    rewardPerNegativeCasEma: number; // engagement increase per -1 CAS EMA
+    penaltyPerPositiveCasEma: number; // engagement decrease per +1 CAS EMA
+    min: number;
+    max: number;
   };
   difficultyProfiles: Record<DifficultyLevel, MctDifficultyProfile>;
 };
@@ -109,12 +132,17 @@ export const MCT_RULES_V1: MctRulesConfig = {
     contentCbtLike: ["sokratisk", "verbal"],
     processMctLike: ["mindfulness", "eksperiment"],
 
-    // CAS deltas here are applied as "direct CAS delta" (affects U+T equally).
-    processDeltaCas: {
+    processDeltaThreat: {
+      sokratisk: 0,
+      verbal: 0,
+      mindfulness: -3,
+      eksperiment: -7,
+    },
+    processDeltaUncontrollability: {
       sokratisk: 0,
       verbal: 0,
       mindfulness: -10,
-      eksperiment: -9,
+      eksperiment: -6,
     },
     processDeltaPositive: {
       sokratisk: 0,
@@ -123,31 +151,55 @@ export const MCT_RULES_V1: MctRulesConfig = {
       eksperiment: -1,
     },
 
-    // Content-focus tends to increase CAS (more monitoring/rumination).
-    contentLevel1DeltaCas: 1.5,
-    contentDeltaPositive: 2,
+    contentLevel1: {
+      deltaThreat: 1,
+      deltaUncontrollability: 0.5,
+      deltaPositive: 0,
+    },
+    contentLevel2plus: {
+      deltaThreat: 8,
+      deltaUncontrollability: 4,
+      deltaPositive: 2,
+    },
   },
 
   drift: {
     // Higher => more CAS drift upwards when meta-worry is high.
     baseMultiplier: 6,
+    uncontrollabilityWeight: 0.7,
+    threatWeight: 0.3,
   },
 
   backfire: {
     level3: {
       earlyPhaseOnly: true,
       requiredHighMetaWorry: true,
-      // The raw extra delta is further scaled by difficulty profile sensitivity and overall scale.
-      extraDeltaCas: 18,
-      extraDeltaPositive: 3,
+      // The raw deltas are further scaled by overall gain/cooperation.
+      deltaUncontrollability: 16,
+      deltaThreat: 8,
+      deltaPositive: 4,
     },
+  },
+
+  engagementLearning: {
+    initialFromProxyWeight: 0.8,
+    profileBaselineByDifficulty: {
+      1: 55,
+      2: 45,
+      3: 40,
+    },
+    casDeltaEmaAlpha: 0.35,
+    rewardPerNegativeCasEma: 1.6,
+    penaltyPerPositiveCasEma: 1.2,
+    min: 10,
+    max: 90,
   },
 
   difficultyProfiles: {
     1: {
       id: 1,
       label: "Nivå 1 (samarbeidende / lav meta-worry)",
-      engagementBoost: 10,
+      engagementBoost: 0,
       casStickiness: 0.15,
       contentCbtPenalty: 2,
       earlyProcessBackfireSensitivity: 0.15,

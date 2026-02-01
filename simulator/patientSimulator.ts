@@ -91,6 +91,43 @@ function applyDirectCasDelta(next: Partial<PatientState>, deltaCas: number) {
   next.beliefDanger = clamp01to100((next.beliefDanger ?? 0) + deltaCas);
 }
 
+function getLearnedEngagement(patientState: PatientState, difficultyLevel: DifficultyLevel) {
+  const current = typeof patientState.simEngagement === "number" ? patientState.simEngagement : null;
+  if (current !== null) return clamp01to100(current);
+
+  const proxy = inferEngagement(patientState);
+  const baseline = MCT_RULES_V1.engagementLearning.profileBaselineByDifficulty[difficultyLevel];
+  const w = MCT_RULES_V1.engagementLearning.initialFromProxyWeight;
+  return clamp01to100(w * proxy + (1 - w) * baseline);
+}
+
+function updateLearnedEngagement(params: {
+  previousEngagement: number;
+  previousCasDeltaEma: number;
+  deltaCasObserved: number;
+}) {
+  const alpha = MCT_RULES_V1.engagementLearning.casDeltaEmaAlpha;
+  const casDeltaEma = alpha * params.deltaCasObserved + (1 - alpha) * params.previousCasDeltaEma;
+
+  const reward = MCT_RULES_V1.engagementLearning.rewardPerNegativeCasEma;
+  const penalty = MCT_RULES_V1.engagementLearning.penaltyPerPositiveCasEma;
+
+  const engagementNext =
+    params.previousEngagement +
+    reward * Math.max(0, -casDeltaEma) -
+    penalty * Math.max(0, casDeltaEma);
+
+  return {
+    casDeltaEma: Math.round(casDeltaEma * 100) / 100,
+    engagement: clamp01to100(
+      Math.max(
+        MCT_RULES_V1.engagementLearning.min,
+        Math.min(MCT_RULES_V1.engagementLearning.max, engagementNext),
+      ),
+    ),
+  };
+}
+
 function buildSystemFeedback(params: {
   difficultyLevel: DifficultyLevel;
   turnIndex: number;
@@ -99,6 +136,11 @@ function buildSystemFeedback(params: {
   casBefore: number;
   casAfter: number;
   metaWorryBefore: number;
+  deltas: {
+    threat: number;
+    uncontrollability: number;
+    positive: number;
+  };
   flags: {
     contentCbtPenalty: boolean;
     earlyProcessBackfire: boolean;
@@ -110,6 +152,9 @@ function buildSystemFeedback(params: {
   lines.push(`System: ${params.phase} turn • Difficulty ${params.difficultyLevel}`);
   lines.push(`MCT-score (CAS): ${deltaCas <= 0 ? "" : "+"}${deltaCas} (målet er negativt)`);
   lines.push(`Meta-worry (proxy): ${Math.round(params.metaWorryBefore)}`);
+  lines.push(
+    `ΔU:${Math.round(params.deltas.uncontrollability * 10) / 10}  ΔT:${Math.round(params.deltas.threat * 10) / 10}  ΔPos:${Math.round(params.deltas.positive * 10) / 10}`,
+  );
 
   if (params.flags.earlyProcessBackfire) {
     lines.push(
@@ -237,22 +282,19 @@ export function simulateGadPatientTurn(input: PatientTurnInput): PatientTurnOutp
 
   const profile = MCT_RULES_V1.difficultyProfiles[difficultyLevel];
   const resistance = inferResistance(patientState, difficultyLevel);
-  const engagement = inferEngagement(patientState);
-
-  const engagementBoost = profile.engagementBoost;
+  const engagement = getLearnedEngagement(patientState, difficultyLevel);
 
   // Convert to a 0..1 "cooperation" scalar: high resistance reduces effect sizes.
   const cooperation =
-    clamp01to100(
-      engagement + engagementBoost - MCT_RULES_V1.cooperation.resistanceWeight * resistance,
-    ) / 100;
+    clamp01to100(engagement - MCT_RULES_V1.cooperation.resistanceWeight * resistance) / 100;
 
   const metaWorry = inferMetaWorry(patientState);
   const casBefore = deriveCas(patientState);
 
   // MCT: score is CAS change (not "good answers").
   // We'll model changes primarily via a CAS delta, plus targeted meta-belief shifts.
-  let deltaCas = 0;
+  let deltaThreat = 0;
+  let deltaUncontrollability = 0;
   let deltaPositive = 0;
 
   let contentCbtPenalty = false;
@@ -260,23 +302,27 @@ export function simulateGadPatientTurn(input: PatientTurnInput): PatientTurnOutp
 
   // Baseline CAS stickiness: higher difficulty tends to creep CAS back up, especially when meta-worry is high.
   const metaWorryDrive = (metaWorry - 50) / 50; // approx -1..+1
-  const drift = profile.casStickiness * MCT_RULES_V1.drift.baseMultiplier * Math.max(0, metaWorryDrive);
-  deltaCas += drift;
+  const driftMagnitude =
+    profile.casStickiness * MCT_RULES_V1.drift.baseMultiplier * Math.max(0, metaWorryDrive);
+  deltaUncontrollability += driftMagnitude * MCT_RULES_V1.drift.uncontrollabilityWeight;
+  deltaThreat += driftMagnitude * MCT_RULES_V1.drift.threatWeight;
 
   // Intervention effects: process vs content.
   if (isProcessMctLike(interventionType)) {
     // Process-focus can reduce CAS, scaled by cooperation and difficulty.
-    deltaCas += MCT_RULES_V1.interventions.processDeltaCas[interventionType] ?? 0;
+    deltaThreat += MCT_RULES_V1.interventions.processDeltaThreat[interventionType] ?? 0;
+    deltaUncontrollability += MCT_RULES_V1.interventions.processDeltaUncontrollability[interventionType] ?? 0;
     // Successful process work tends to weaken positive beliefs about worry.
     deltaPositive += MCT_RULES_V1.interventions.processDeltaPositive[interventionType] ?? 0;
   } else {
     // Content-focus is not rewarded: often increases CAS via rumination/monitoring.
     contentCbtPenalty = difficultyLevel >= 2;
-    const base =
-      difficultyLevel === 1 ? MCT_RULES_V1.interventions.contentLevel1DeltaCas : profile.contentCbtPenalty;
-    deltaCas += base;
-    // Content focus can reinforce "worry is useful" especially in level 2-3.
-    deltaPositive += difficultyLevel === 1 ? 0 : MCT_RULES_V1.interventions.contentDeltaPositive;
+    const v = difficultyLevel === 1 ? MCT_RULES_V1.interventions.contentLevel1 : MCT_RULES_V1.interventions.contentLevel2plus;
+    // Use explicit variable deltas so meta-worry and uncontrollability don't collapse into the same thing.
+    // Content focus especially increases threat monitoring and the felt uncontrollability.
+    deltaThreat += difficultyLevel === 1 ? v.deltaThreat : Math.max(v.deltaThreat, profile.contentCbtPenalty);
+    deltaUncontrollability += v.deltaUncontrollability;
+    deltaPositive += v.deltaPositive;
   }
 
   // Timing-sensitive backfire: level 3 early DM/experiment when meta-worry is high.
@@ -287,29 +333,41 @@ export function simulateGadPatientTurn(input: PatientTurnInput): PatientTurnOutp
   const backfireAllowedByMeta = backfireCfg.requiredHighMetaWorry ? highMetaWorry : true;
   if (difficultyLevel === 3 && backfireAllowedByPhase && backfireAllowedByMeta && isProcessMctLike(interventionType)) {
     earlyProcessBackfire = true;
-    // Backfire: they start monitoring/controlling the technique -> CAS spikes and uncontrollability belief rises.
-    deltaCas += backfireCfg.extraDeltaCas * profile.earlyProcessBackfireSensitivity;
-    // Also temporarily strengthens positive belief about worry/control attempts.
-    deltaPositive += backfireCfg.extraDeltaPositive;
+    // Backfire must hit at least two state variables (always U + T, and usually positive beliefs).
+    deltaUncontrollability += backfireCfg.deltaUncontrollability;
+    deltaThreat += backfireCfg.deltaThreat;
+    deltaPositive += backfireCfg.deltaPositive;
   }
 
   // Apply gain + cooperation. Key: reward CAS reduction regardless of the "quality" of therapist wording.
   const scale = profile.gain * (MCT_RULES_V1.cooperation.minScale + MCT_RULES_V1.cooperation.maxScale * cooperation);
-  const scaledDeltaCas = deltaCas * scale;
+  const scaledDeltaThreat = deltaThreat * scale;
+  const scaledDeltaUncontrollability = deltaUncontrollability * scale;
   const scaledDeltaPositive = deltaPositive * scale;
 
   const nextPatientState: Partial<PatientState> = {
-    beliefUncontrollability: clamp01to100(patientState.beliefUncontrollability ?? 0),
-    beliefDanger: clamp01to100(patientState.beliefDanger ?? 0),
+    beliefUncontrollability: clamp01to100(
+      (patientState.beliefUncontrollability ?? 0) + scaledDeltaUncontrollability,
+    ),
+    beliefDanger: clamp01to100((patientState.beliefDanger ?? 0) + scaledDeltaThreat),
     beliefPositive: clamp01to100((patientState.beliefPositive ?? 0) + scaledDeltaPositive),
   };
-  applyDirectCasDelta(nextPatientState, scaledDeltaCas);
 
   const casAfter = deriveCas({
     ...patientState,
     ...nextPatientState,
   });
   const deltaCasObserved = casAfter - casBefore;
+
+  const prevCasEma = typeof patientState.simCasDeltaEma === "number" ? patientState.simCasDeltaEma : 0;
+  const engagementUpdate = updateLearnedEngagement({
+    previousEngagement: engagement,
+    previousCasDeltaEma: prevCasEma,
+    deltaCasObserved,
+  });
+
+  nextPatientState.simCasDeltaEma = engagementUpdate.casDeltaEma;
+  nextPatientState.simEngagement = engagementUpdate.engagement;
 
   const patientReply = pickReply({
     interventionType,
@@ -332,6 +390,12 @@ export function simulateGadPatientTurn(input: PatientTurnInput): PatientTurnOutp
     casBefore,
     casAfter,
     metaWorryBefore: metaWorry,
+    deltas: {
+      threat: (nextPatientState.beliefDanger ?? 0) - (patientState.beliefDanger ?? 0),
+      uncontrollability:
+        (nextPatientState.beliefUncontrollability ?? 0) - (patientState.beliefUncontrollability ?? 0),
+      positive: (nextPatientState.beliefPositive ?? 0) - (patientState.beliefPositive ?? 0),
+    },
     flags: {
       contentCbtPenalty,
       earlyProcessBackfire,
@@ -344,9 +408,9 @@ export function simulateGadPatientTurn(input: PatientTurnInput): PatientTurnOutp
     systemFeedback,
     signals: {
       resistance: clamp01to100(resistance),
-      engagement: clamp01to100(engagement),
+      engagement: clamp01to100(engagementUpdate.engagement),
       cas: casAfter,
-      deltaCas: clamp01to100(Math.abs(deltaCasObserved)) === 0 ? 0 : deltaCasObserved,
+      deltaCas: Math.round(deltaCasObserved * 10) / 10,
     },
   };
 }

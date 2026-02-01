@@ -19,7 +19,9 @@ export default function DevDebugPanel() {
 
   const data = useMemo(() => {
     const cas = deriveCas(patientState);
-    const engagement = inferEngagement(patientState);
+    const engagementProxy = inferEngagement(patientState);
+    const engagementLearned =
+      typeof (patientState as any).simEngagement === "number" ? (patientState as any).simEngagement : null;
     const metaWorry = inferMetaWorry(patientState);
 
     const turnIndex = messages.filter((m) => m.sender === "therapist").length;
@@ -34,10 +36,10 @@ export default function DevDebugPanel() {
     const dU = delta(prev?.beliefUncontrollability, next?.beliefUncontrollability);
     const dT = delta(prev?.beliefDanger, next?.beliefDanger);
     const dP = delta(prev?.beliefPositive, next?.beliefPositive);
+    const dE = delta(prev?.simEngagement, next?.simEngagement);
 
     return {
       cas,
-      engagement,
       metaWorry,
       phase,
       turnIndex,
@@ -51,6 +53,11 @@ export default function DevDebugPanel() {
         threat: dT,
         uncontrollability: dU,
         positive: dP,
+        engagement: dE,
+      },
+      engagement: {
+        learned: engagementLearned,
+        proxy: engagementProxy,
       },
     };
   }, [patientState, interventions, messages]);
@@ -96,7 +103,11 @@ export default function DevDebugPanel() {
         <Row label="Uncontrollability" value={data.beliefs.uncontrollability} delta={data.deltas.uncontrollability} />
         <Row label="Pos meta (worry helpful)" value={data.beliefs.positive} delta={data.deltas.positive} />
         <Row label="Meta-worry (proxy)" value={data.metaWorry} delta={null} />
-        <Row label="Engagement (proxy)" value={data.engagement} delta={null} />
+        <Row
+          label="Engagement (learned)"
+          value={data.engagement.learned ?? data.engagement.proxy}
+          delta={data.deltas.engagement}
+        />
       </div>
 
       <div style={{ marginTop: 8, opacity: 0.8 }}>
