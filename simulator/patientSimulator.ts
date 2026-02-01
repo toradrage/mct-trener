@@ -1,5 +1,6 @@
 import type { DifficultyLevel, PatientState } from "../store/sessionStore";
 import { MCT_RULES_V1, type Phase } from "./mctRulesConfig";
+import { sanitizePatientSpeech } from "./patientLanguage";
 
 export type InterventionType = "sokratisk" | "eksperiment" | "mindfulness" | "verbal";
 
@@ -221,7 +222,7 @@ function pickReply(params: {
 
   if (flags.contentCbtPenalty) {
     return (
-      "Når vi går inn i detaljene, blir jeg bare mer usikker… " +
+      "Når jeg begynner å gå inn i detaljene, blir jeg bare mer usikker… " +
       "jeg begynner å gruble med én gang." +
       suffixByDifficulty[difficultyLevel]
     );
@@ -244,7 +245,7 @@ function pickReply(params: {
 
   if (interventionType === "sokratisk") {
     return (
-      "Jeg vet ikke helt… når vi spør sånn, blir jeg mest bare mer i tvil." +
+      "Jeg vet ikke helt… når du spør sånn, blir jeg mest bare mer i tvil." +
       suffixByDifficulty[difficultyLevel]
     );
   }
@@ -358,7 +359,8 @@ export function simulateGadPatientTurn(input: PatientTurnInput): PatientTurnOutp
   nextPatientState.simCasDeltaEma = engagementUpdate.casDeltaEma;
   nextPatientState.simEngagement = engagementUpdate.engagement;
 
-  const patientReply = pickReply({
+  const patientReply = sanitizePatientSpeech(
+    pickReply({
     interventionType,
     difficultyLevel,
     patientState,
@@ -369,7 +371,8 @@ export function simulateGadPatientTurn(input: PatientTurnInput): PatientTurnOutp
       contentCbtPenalty,
       earlyProcessBackfire,
     },
-  });
+    }),
+  );
 
   const systemFeedback = buildSystemFeedback({
     difficultyLevel,
