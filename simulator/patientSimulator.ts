@@ -1,6 +1,6 @@
 import type { DifficultyLevel, PatientState } from "../store/sessionStore";
 import { MCT_RULES_V1, type Phase } from "./mctRulesConfig";
-import { sanitizePatientSpeech } from "./patientLanguage";
+import { calibratePatientSpeech } from "./patientLanguage";
 
 export type InterventionType = "sokratisk" | "eksperiment" | "mindfulness" | "verbal";
 
@@ -202,8 +202,8 @@ function pickReply(params: {
 
   const suffixByDifficulty: Record<DifficultyLevel, string> = {
     1: "",
-    2: " Jeg blir fort dratt tilbake i det.",
-    3: " Det tar helt av i hodet mitt med en gang.",
+    2: " … men jeg glipper fort.",
+    3: " … og det tar fort helt av.",
   };
 
   // IMPORTANT: Patient replies must be everyday speech.
@@ -213,8 +213,7 @@ function pickReply(params: {
   if (flags.earlyProcessBackfire) {
     if (interventionType === "eksperiment" || interventionType === "mindfulness") {
       return (
-        "Når jeg prøver å gjøre det på den måten, begynner jeg å kjenne etter hele tiden… " +
-        "og da blir jeg bare mer urolig." +
+        "Når jeg prøver sånn… blir jeg bare mer urolig." +
         suffixByDifficulty[difficultyLevel]
       );
     }
@@ -222,30 +221,28 @@ function pickReply(params: {
 
   if (flags.contentCbtPenalty) {
     return (
-      "Når jeg begynner å gå inn i detaljene, blir jeg bare mer usikker… " +
-      "jeg begynner å gruble med én gang." +
+      "Når jeg går inn i detaljene… blir jeg bare mer usikker." +
       suffixByDifficulty[difficultyLevel]
     );
   }
 
   if (interventionType === "mindfulness") {
     return (
-      "Det var litt rart, men i et lite øyeblikk klarte jeg å la det bare være." +
+      "Det var litt rart… men jeg ble litt roligere et øyeblikk." +
       suffixByDifficulty[difficultyLevel]
     );
   }
 
   if (interventionType === "eksperiment") {
     return (
-      "Ok… jeg kan prøve å vente litt før jeg går helt inn i bekymringen. " +
-      "Men jeg er ikke sikker på om jeg får det til." +
+      "Ok… jeg kan prøve å vente litt. Men det er vanskelig." +
       suffixByDifficulty[difficultyLevel]
     );
   }
 
   if (interventionType === "sokratisk") {
     return (
-      "Jeg vet ikke helt… når du spør sånn, blir jeg mest bare mer i tvil." +
+      "Jeg vet ikke… jeg blir bare mer i tvil." +
       suffixByDifficulty[difficultyLevel]
     );
   }
@@ -253,13 +250,12 @@ function pickReply(params: {
   // verbal
   if (positive >= 55) {
     return (
-      "Jeg føler litt at jeg må tenke gjennom alt for å være forberedt… " +
-      "så det er vanskelig å slippe." +
+      "Jeg føler jeg må tenke gjennom alt… og det er vanskelig å slippe." +
       suffixByDifficulty[difficultyLevel]
     );
   }
   return (
-    "Det gir litt mening… men jeg trenger nok å prøve det noen ganger før det sitter." +
+    "Ok… jeg kan prøve." +
     suffixByDifficulty[difficultyLevel]
   );
 }
@@ -359,7 +355,7 @@ export function simulateGadPatientTurn(input: PatientTurnInput): PatientTurnOutp
   nextPatientState.simCasDeltaEma = engagementUpdate.casDeltaEma;
   nextPatientState.simEngagement = engagementUpdate.engagement;
 
-  const patientReply = sanitizePatientSpeech(
+  const patientReply = calibratePatientSpeech(
     pickReply({
     interventionType,
     difficultyLevel,
@@ -372,6 +368,7 @@ export function simulateGadPatientTurn(input: PatientTurnInput): PatientTurnOutp
       earlyProcessBackfire,
     },
     }),
+    { phase },
   );
 
   const systemFeedback = buildSystemFeedback({

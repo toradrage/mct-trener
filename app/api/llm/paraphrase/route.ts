@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import {
-  sanitizePatientSpeech,
+  calibratePatientSpeech,
   violatesPatientVoice,
 } from "../../../../simulator/patientLanguage";
 
@@ -62,7 +62,8 @@ export async function POST(req: Request) {
         "- Ikke endre mening eller retning (kun språk).\n" +
         "- Ikke introduser nye fakta, nye symptomer eller nye hendelser.\n" +
         "- Ikke gi råd eller forklaringer; kun pasientens replikk.\n" +
-        "- 1–2 setninger, naturlig og litt uperfekt. Gjerne nøling/uklarhet.\n" +
+        "- 1 kort setning. Naturlig og litt uperfekt. Gjerne nøling/uklarhet.\n" +
+        "- Beskriv opplevelse, ikke mekanisme. Ikke forklar hvorfor.\n" +
         "- Bruk hverdagsspråk. Unngå terapeutiske begreper.\n" +
         "- Bruk konsekvent 1. person entall (jeg).\n" +
         "- IKKE bruk ordene: vi, man, en.\n" +
@@ -129,10 +130,10 @@ export async function POST(req: Request) {
 
     // Hard patient-language rule: if the LLM uses forbidden pronouns, fall back to rules reply.
     if (!rawReply || violatesPatientVoice(rawReply)) {
-      return NextResponse.json({ ok: true, reply: sanitizePatientSpeech(rulesReply) });
+      return NextResponse.json({ ok: true, reply: calibratePatientSpeech(rulesReply, { phase: body.phase }) });
     }
 
-    return NextResponse.json({ ok: true, reply: sanitizePatientSpeech(rawReply) });
+    return NextResponse.json({ ok: true, reply: calibratePatientSpeech(rawReply, { phase: body.phase }) });
   } catch (e: any) {
     const aborted = e?.name === "AbortError";
     return NextResponse.json(

@@ -5,6 +5,15 @@ export type PatientVoiceOptions = {
   allowWe?: boolean;
 };
 
+export type PatientSpeechCalibrationOptions = PatientVoiceOptions & {
+  /** Optional phase for stricter early-session language. */
+  phase?: "early" | "mid" | "late";
+  /** Maximum number of sentences to keep. Defaults vary by phase. */
+  maxSentences?: number;
+  /** Maximum characters to keep. Defaults vary by phase. */
+  maxChars?: number;
+};
+
 const WE_WORDS = /\b(vi|oss|vår|vårt|våre)\b/i;
 const MAN_WORD = /\bman\b/i;
 
@@ -45,4 +54,61 @@ export function sanitizePatientSpeech(text: string, opts: PatientVoiceOptions = 
   t = t.replace(/\s+([,.!?…])/g, "$1");
 
   return t.trim();
+}
+
+function truncateSentences(text: string, maxSentences: number) {
+  const t = (text ?? "").trim();
+  if (!t) return "";
+
+  const parts = t.split(/(?<=[.!?…])\s+/g);
+  const kept = parts.slice(0, Math.max(1, maxSentences)).join(" ");
+  return kept.trim();
+}
+
+function stripOvertInsightPhrases(text: string) {
+  let t = (text ?? "").trim();
+  if (!t) return "";
+
+  // Remove therapist-y confirmations.
+  t = t.replace(/\bdet gir(?:\s+litt)?\s+mening\b/gi, "ok");
+  t = t.replace(/\bkanskje\s+jeg\s+kan\s+øve\b/gi, "kanskje jeg kan prøve");
+
+  // Avoid explicit mechanism/explanation connectors (especially early).
+  t = t.replace(/\b(slik\s+at|sånn\s+at|derfor|fordi)\b/gi, "");
+  t = t.replace(/\s{2,}/g, " ");
+  t = t.replace(/\s+([,.!?…])/g, "$1");
+
+  return t.trim();
+}
+
+export function calibratePatientSpeech(
+  text: string,
+  opts: PatientSpeechCalibrationOptions = {},
+): string {
+  const phase = opts.phase;
+  const defaultsByPhase = {
+    early: { maxSentences: 1, maxChars: 120 },
+    mid: { maxSentences: 1, maxChars: 140 },
+    late: { maxSentences: 2, maxChars: 180 },
+  } as const;
+
+  const defaults = phase ? defaultsByPhase[phase] : { maxSentences: 1, maxChars: 140 };
+  const maxSentences = opts.maxSentences ?? defaults.maxSentences;
+  const maxChars = opts.maxChars ?? defaults.maxChars;
+
+  // Order matters: sanitize voice first, then remove insight phrases, then truncate.
+  let out = sanitizePatientSpeech(text, opts);
+  out = stripOvertInsightPhrases(out);
+  out = truncateSentences(out, maxSentences);
+
+  if (maxChars && out.length > maxChars) {
+    out = out.slice(0, maxChars).trim();
+    // Avoid ending mid-word.
+    out = out.replace(/\s+\S*$/g, "").trim();
+    if (out && !/[.!?…]$/.test(out)) out = out + "…";
+  }
+
+  // Final cleanup
+  out = out.replace(/\s{2,}/g, " ").trim();
+  return out;
 }
