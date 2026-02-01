@@ -15,10 +15,12 @@ export type PatientTurnInput = {
 export type PatientTurnOutput = {
   nextPatientState: Partial<PatientState>;
   patientReply: string;
+  systemFeedback: string;
   signals: {
     resistance: number; // 0-100
     engagement: number; // 0-100
     cas: number; // 0-100 (derived)
+    deltaCas: number; // negative is good (lower CAS)
   };
 };
 
@@ -32,9 +34,48 @@ function deriveCas(patientState: PatientState) {
   return clamp01to100(0.55 * uncontrollability + 0.45 * threat);
 }
 
-function difficultyFactor(difficultyLevel: DifficultyLevel) {
-  // Higher difficulty -> smaller therapeutic gain + more resistance
-  return difficultyLevel === 1 ? 1 : difficultyLevel === 2 ? 0.55 : 0.35;
+type MctDifficultyProfile = {
+  id: DifficultyLevel;
+  label: string;
+  // Baseline tendency to return to higher CAS between turns ("stickiness").
+  casStickiness: number;
+  // How much content-focus tends to increase CAS.
+  contentCbtPenalty: number;
+  // How sensitive the patient is to early process interventions (DM/experiment) when meta-worry is high.
+  earlyProcessBackfireSensitivity: number;
+  // Global gain multiplier (lower = less therapeutic movement).
+  gain: number;
+};
+
+function getDifficultyProfile(difficultyLevel: DifficultyLevel): MctDifficultyProfile {
+  if (difficultyLevel === 1) {
+    return {
+      id: 1,
+      label: "Nivå 1 (samarbeidende / lav meta-worry)",
+      casStickiness: 0.15,
+      contentCbtPenalty: 2,
+      earlyProcessBackfireSensitivity: 0.15,
+      gain: 1,
+    };
+  }
+  if (difficultyLevel === 2) {
+    return {
+      id: 2,
+      label: "Nivå 2 (fastlåst CAS / ruminerer lett)",
+      casStickiness: 0.35,
+      contentCbtPenalty: 8,
+      earlyProcessBackfireSensitivity: 0.35,
+      gain: 0.7,
+    };
+  }
+  return {
+    id: 3,
+    label: "Nivå 3 (høy meta-worry / tidlig backfire)",
+    casStickiness: 0.55,
+    contentCbtPenalty: 12,
+    earlyProcessBackfireSensitivity: 0.7,
+    gain: 0.55,
+  };
 }
 
 function inferEngagement(patientState: PatientState) {
@@ -60,6 +101,72 @@ function inferMetaWorry(patientState: PatientState) {
   return clamp01to100(0.65 * uncontrollability + 0.35 * positiveBeliefs);
 }
 
+function isContentCbtLike(interventionType: InterventionType) {
+  // In this simulator, these are treated as content-focused / reassurance-adjacent.
+  return interventionType === "sokratisk" || interventionType === "verbal";
+}
+
+function isProcessMctLike(interventionType: InterventionType) {
+  // In this simulator, these are treated as process-focused / MCT-consistent.
+  return interventionType === "mindfulness" || interventionType === "eksperiment";
+}
+
+function timingPhase(turnIndex: number) {
+  if (turnIndex < 2) return "early";
+  if (turnIndex < 6) return "mid";
+  return "late";
+}
+
+function applyDirectCasDelta(next: Partial<PatientState>, deltaCas: number) {
+  // CAS is derived: CAS = 0.55*U + 0.45*T.
+  // If we move both U and T by the same delta, CAS moves by exactly delta.
+  next.beliefUncontrollability = clamp01to100((next.beliefUncontrollability ?? 0) + deltaCas);
+  next.beliefDanger = clamp01to100((next.beliefDanger ?? 0) + deltaCas);
+}
+
+function buildSystemFeedback(params: {
+  difficultyLevel: DifficultyLevel;
+  turnIndex: number;
+  interventionType: InterventionType;
+  casBefore: number;
+  casAfter: number;
+  metaWorryBefore: number;
+  flags: {
+    contentCbtPenalty: boolean;
+    earlyProcessBackfire: boolean;
+  };
+}) {
+  const phase = timingPhase(params.turnIndex);
+  const deltaCas = Math.round((params.casAfter - params.casBefore) * 10) / 10;
+
+  const lines: string[] = [];
+  lines.push(`System: ${phase} turn • Difficulty ${params.difficultyLevel}`);
+  lines.push(`MCT-score (CAS): ${deltaCas <= 0 ? "" : "+"}${deltaCas} (målet er negativt)`);
+  lines.push(`Meta-worry (proxy): ${Math.round(params.metaWorryBefore)}`);
+
+  if (params.flags.earlyProcessBackfire) {
+    lines.push(
+      "Rule: Tidlig DM/eksperiment ved høy meta-worry kan backfire (øker CAS + tro på ukontrollerbarhet).",
+    );
+  }
+
+  if (params.flags.contentCbtPenalty) {
+    lines.push(
+      "Rule: Innholds-fokus (CBT på innhold/reassurance) øker ofte CAS (spesielt nivå 2–3) via mer grubling/monitorering.",
+    );
+  }
+
+  if (!params.flags.earlyProcessBackfire && !params.flags.contentCbtPenalty) {
+    if (isProcessMctLike(params.interventionType)) {
+      lines.push("Rule: Prosess-fokus belønnes når det reduserer CAS, uavhengig av 'gode svar'.");
+    } else {
+      lines.push("Rule: Innholds-fokus belønnes ikke; mål er CAS-reduksjon og mindre monitorering.");
+    }
+  }
+
+  return lines.join("\n");
+}
+
 function pickReply(params: {
   interventionType: InterventionType;
   difficultyLevel: DifficultyLevel;
@@ -68,8 +175,8 @@ function pickReply(params: {
   therapistText: string;
   turnIndex?: number;
   flags: {
-    contentCbtSpiral: boolean;
-    earlyBackfire: boolean;
+    contentCbtPenalty: boolean;
+    earlyProcessBackfire: boolean;
   };
 }) {
   const { interventionType, difficultyLevel, patientState, nextState, flags } = params;
@@ -89,30 +196,20 @@ function pickReply(params: {
     3: " Det kicker fort i gang hos meg nå.",
   };
 
-  if (flags.earlyBackfire) {
-    if (interventionType === "eksperiment") {
+  if (flags.earlyProcessBackfire) {
+    if (interventionType === "eksperiment" || interventionType === "mindfulness") {
       return (
-        "Når jeg prøver å " +
-        "slippe taket" +
-        ", blir jeg plutselig redd for at jeg ikke klarer å stoppe bekymringen i det hele tatt. " +
-        "Da begynner jeg å overvåke meg selv mer, og det øker bare trykket." +
+        "Når jeg prøver å gjøre det mer 'prosessorientert', begynner jeg å overvåke om jeg gjør det riktig. " +
+        "Da blir jeg redd for at bekymringen er ukontrollerbar, og CAS skyter i været." +
         suffixByDifficulty[difficultyLevel]
       );
     }
-
-    // reassurance-style backfire
-    return (
-      "Når vi leter etter en betryggende forklaring, får jeg et kort pust… " +
-      "men så begynner jeg å sjekke om jeg virkelig er rolig. " +
-      "Da føles bekymringen enda mer ukontrollerbar." +
-      suffixByDifficulty[difficultyLevel]
-    );
   }
 
-  if (flags.contentCbtSpiral) {
+  if (flags.contentCbtPenalty) {
     return (
       "Når vi går inn i innholdet, merker jeg at jeg begynner å analysere og sammenligne " +
-      "hele tiden. Det blir mer grubling, og jeg ender med å følge bekymringen tettere." +
+      "hele tiden. Det blir mer grubling/monitorering, og CAS tar mer plass." +
       suffixByDifficulty[difficultyLevel]
     );
   }
@@ -166,9 +263,8 @@ export function simulateGadPatientTurn(input: PatientTurnInput): PatientTurnOutp
   const { difficultyLevel, interventionType, patientState } = input;
 
   const turnIndex = input.turnIndex ?? 0;
-  const isEarly = turnIndex < 2;
 
-  const factor = difficultyFactor(difficultyLevel);
+  const profile = getDifficultyProfile(difficultyLevel);
   const resistance = inferResistance(patientState, difficultyLevel);
   const engagement = inferEngagement(patientState);
 
@@ -179,84 +275,65 @@ export function simulateGadPatientTurn(input: PatientTurnInput): PatientTurnOutp
   const cooperation = clamp01to100(engagement + engagementBoost - 0.6 * resistance) / 100;
 
   const metaWorry = inferMetaWorry(patientState);
+  const casBefore = deriveCas(patientState);
 
-  // Base deltas (tuned to feel plausible, not clinically perfect).
-  let deltaUncontrol = 0;
-  let deltaThreat = 0;
+  // MCT: score is CAS change (not "good answers").
+  // We'll model changes primarily via a CAS delta, plus targeted meta-belief shifts.
+  let deltaCas = 0;
   let deltaPositive = 0;
 
-  let contentCbtSpiral = false;
-  let earlyBackfire = false;
+  let contentCbtPenalty = false;
+  let earlyProcessBackfire = false;
 
-  switch (interventionType) {
-    case "mindfulness":
-      deltaUncontrol -= 10;
-      deltaThreat -= 3;
-      break;
-    case "eksperiment":
-      deltaThreat -= 9;
-      deltaUncontrol -= 6;
-      break;
-    case "sokratisk":
-      deltaThreat -= 8;
-      deltaPositive -= 2;
-      break;
-    case "verbal":
-      deltaPositive -= 10;
-      // If threat is high, reattribution can feel invalidating early.
-      if ((patientState.beliefDanger ?? 0) >= 70) deltaThreat += 2;
-      break;
+  // Baseline CAS stickiness: higher difficulty tends to creep CAS back up, especially when meta-worry is high.
+  const metaWorryDrive = (metaWorry - 50) / 50; // approx -1..+1
+  const drift = profile.casStickiness * 6 * Math.max(0, metaWorryDrive);
+  deltaCas += drift;
+
+  // Intervention effects: process vs content.
+  if (isProcessMctLike(interventionType)) {
+    // Process-focus can reduce CAS, scaled by cooperation and difficulty.
+    const base = interventionType === "mindfulness" ? -10 : -9;
+    deltaCas += base;
+    // Successful process work tends to weaken positive beliefs about worry.
+    deltaPositive += interventionType === "mindfulness" ? -2 : -1;
+  } else {
+    // Content-focus is not rewarded: often increases CAS via rumination/monitoring.
+    contentCbtPenalty = difficultyLevel >= 2;
+    const base = difficultyLevel === 1 ? +1.5 : profile.contentCbtPenalty;
+    deltaCas += base;
+    // Content focus can reinforce "worry is useful" especially in level 2-3.
+    deltaPositive += difficultyLevel === 1 ? 0 : +2;
   }
 
-  // Difficulty-specific dynamics (GAD): focus on CAS + metacognitions.
-  if (difficultyLevel === 2) {
-    // Level 2: more stuck CAS; content-focused work often increases rumination.
-    // Here we treat sokratisk/verbal as more content/"reassurance"-like.
-    if (interventionType === "sokratisk" || interventionType === "verbal") {
-      contentCbtSpiral = true;
-      deltaThreat += 7;
-      deltaUncontrol += 5;
-      deltaPositive += 2;
-    }
+  // Timing-sensitive backfire: level 3 early DM/experiment when meta-worry is high.
+  const isEarly = timingPhase(turnIndex) === "early";
+  const highMetaWorry = metaWorry >= 65;
+  if (difficultyLevel === 3 && isEarly && highMetaWorry && isProcessMctLike(interventionType)) {
+    earlyProcessBackfire = true;
+    // Backfire: they start monitoring/controlling the technique -> CAS spikes and uncontrollability belief rises.
+    deltaCas += 18 * profile.earlyProcessBackfireSensitivity;
+    // Also temporarily strengthens positive belief about worry/control attempts.
+    deltaPositive += 3;
   }
 
-  if (difficultyLevel === 3) {
-    // Level 3: high meta-worry; early experiments or reassurance can backfire.
-    const highMetaWorry = metaWorry >= 65;
-    if (isEarly && highMetaWorry && (interventionType === "eksperiment" || interventionType === "verbal")) {
-      earlyBackfire = true;
-      deltaUncontrol += 18;
-      deltaThreat += 7;
-      deltaPositive += 4;
-    }
-  }
-
-  // Level 1: wrong intervention should have small negative effect.
-  if (difficultyLevel === 1) {
-    if (interventionType === "verbal" && (patientState.beliefDanger ?? 0) >= 70) {
-      deltaThreat += 1;
-    }
-  }
-
-  // Apply difficulty + cooperation
-  const scale = factor * (0.35 + 0.65 * cooperation);
-
-  const nextBeliefUncontrollability = clamp01to100(
-    (patientState.beliefUncontrollability ?? 0) + deltaUncontrol * scale,
-  );
-  const nextBeliefDanger = clamp01to100((patientState.beliefDanger ?? 0) + deltaThreat * scale);
-  const nextBeliefPositive = clamp01to100((patientState.beliefPositive ?? 0) + deltaPositive * scale);
+  // Apply gain + cooperation. Key: reward CAS reduction regardless of the "quality" of therapist wording.
+  const scale = profile.gain * (0.35 + 0.65 * cooperation);
+  const scaledDeltaCas = deltaCas * scale;
+  const scaledDeltaPositive = deltaPositive * scale;
 
   const nextPatientState: Partial<PatientState> = {
-    beliefUncontrollability: nextBeliefUncontrollability,
-    beliefDanger: nextBeliefDanger,
-    beliefPositive: nextBeliefPositive,
+    beliefUncontrollability: clamp01to100(patientState.beliefUncontrollability ?? 0),
+    beliefDanger: clamp01to100(patientState.beliefDanger ?? 0),
+    beliefPositive: clamp01to100((patientState.beliefPositive ?? 0) + scaledDeltaPositive),
   };
+  applyDirectCasDelta(nextPatientState, scaledDeltaCas);
 
-  const cas = deriveCas({
+  const casAfter = deriveCas({
     ...patientState,
     ...nextPatientState,
   });
+  const deltaCasObserved = casAfter - casBefore;
 
   const patientReply = pickReply({
     interventionType,
@@ -266,18 +343,33 @@ export function simulateGadPatientTurn(input: PatientTurnInput): PatientTurnOutp
     therapistText: input.therapistText,
     turnIndex,
     flags: {
-      contentCbtSpiral,
-      earlyBackfire,
+      contentCbtPenalty,
+      earlyProcessBackfire,
+    },
+  });
+
+  const systemFeedback = buildSystemFeedback({
+    difficultyLevel,
+    turnIndex,
+    interventionType,
+    casBefore,
+    casAfter,
+    metaWorryBefore: metaWorry,
+    flags: {
+      contentCbtPenalty,
+      earlyProcessBackfire,
     },
   });
 
   return {
     nextPatientState,
     patientReply,
+    systemFeedback,
     signals: {
       resistance: clamp01to100(resistance),
       engagement: clamp01to100(engagement),
-      cas,
+      cas: casAfter,
+      deltaCas: clamp01to100(Math.abs(deltaCasObserved)) === 0 ? 0 : deltaCasObserved,
     },
   };
 }

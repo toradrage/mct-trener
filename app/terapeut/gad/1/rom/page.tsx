@@ -97,7 +97,7 @@ export default function Terapirom() {
     });
     addIntervention({
       type: interventionType,
-      payload: { text, sim: sim.signals, nextState },
+      payload: { text, sim: sim.signals, systemFeedback: sim.systemFeedback, nextState },
       timestamp: now,
     });
     setPatientState(nextState);
