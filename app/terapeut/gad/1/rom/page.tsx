@@ -2,10 +2,12 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { useSessionStore } from "../../../../../store/sessionStore";
+import {
+  simulateGadPatientTurn,
+  type InterventionType,
+} from "../../../../../simulator/patientSimulator";
 import TherapyRoomHUD from "./TherapyRoomHUD";
 import TherapyRoomScene from "./TherapyRoomScene";
-
-type InterventionType = "sokratisk" | "eksperiment" | "mindfulness" | "verbal";
 
 const INTERVENTIONS: Array<{ id: InterventionType; label: string }> = [
   { id: "sokratisk", label: "Sokratiske spørsmål" },
@@ -22,30 +24,6 @@ function pickAvatarSrc(avatarProfile: string) {
   if (avatarProfile?.includes("2")) return "/avatar2.png";
   if (avatarProfile?.includes("3")) return "/avatar3.png";
   return "/avatar1.png";
-}
-
-function generatePatientReply(
-  interventionType: InterventionType,
-  difficultyLevel: 1 | 2 | 3,
-) {
-  const baseByType: Record<InterventionType, string> = {
-    sokratisk:
-      "Jeg skjønner… men jeg får en følelse av at dette kan gå galt. Hva om jeg ikke klarer å stoppe bekymringen?",
-    eksperiment:
-      "Jeg kan prøve… men jeg er redd det blir verre hvis jeg slipper taket.",
-    mindfulness:
-      "Det føles litt uvant, men jeg kan legge merke til tankene uten å følge dem.",
-    verbal:
-      "Kanskje det finnes en annen forklaring… men det føles fortsatt veldig ekte.",
-  };
-
-  const resistanceByDifficulty: Record<1 | 2 | 3, string> = {
-    1: "",
-    2: " Jeg er litt usikker.",
-    3: " Jeg kjenner motstand… dette er vanskelig.",
-  };
-
-  return `${baseByType[interventionType]}${resistanceByDifficulty[difficultyLevel]}`;
 }
 
 export default function Terapirom() {
@@ -85,27 +63,6 @@ export default function Terapirom() {
     ] as const;
   }, [patientState]);
 
-  function applyInterventionEffects(type: InterventionType) {
-    const factor = difficultyLevel === 1 ? 1 : difficultyLevel === 2 ? 0.7 : 0.45;
-
-    const next = { ...patientState };
-    if (type === "mindfulness") {
-      next.beliefUncontrollability = clamp01to100(next.beliefUncontrollability - 6 * factor);
-    }
-    if (type === "sokratisk") {
-      next.beliefDanger = clamp01to100(next.beliefDanger - 5 * factor);
-    }
-    if (type === "eksperiment") {
-      next.beliefDanger = clamp01to100(next.beliefDanger - 4 * factor);
-      next.beliefUncontrollability = clamp01to100(next.beliefUncontrollability - 3 * factor);
-    }
-    if (type === "verbal") {
-      next.beliefPositive = clamp01to100(next.beliefPositive - 4 * factor);
-    }
-
-    setPatientState(next);
-  }
-
   function handleExit() {
     setSessionStatus("finished");
     router.push("/terapeut/gad/1/rom/review");
@@ -118,18 +75,33 @@ export default function Terapirom() {
     const text = melding.trim();
     if (!text) return;
 
+    const now = Date.now();
+
+    const sim = simulateGadPatientTurn({
+      disorder: "GAD",
+      difficultyLevel,
+      interventionType,
+      therapistText: text,
+      patientState,
+    });
+    const nextState = { ...patientState, ...sim.nextPatientState };
+
     addMessage({
       sender: "therapist",
       text,
-      timestamp: Date.now(),
+      timestamp: now,
       interventionType,
     });
-    addIntervention({ type: interventionType, payload: { text }, timestamp: Date.now() });
-    applyInterventionEffects(interventionType);
+    addIntervention({
+      type: interventionType,
+      payload: { text, sim: sim.signals, nextState },
+      timestamp: now,
+    });
+    setPatientState(nextState);
 
     setMelding("");
 
-    const reply = generatePatientReply(interventionType, difficultyLevel);
+    const reply = sim.patientReply;
     setPasientSvar(reply);
     setVisPasientSvar(true);
 
