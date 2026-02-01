@@ -30,10 +30,14 @@ export const FORMULATION_CHECKLIST = [
 
 export type FormulationKey = (typeof FORMULATION_CHECKLIST)[number];
 
+export type FormulationModel = Partial<Record<FormulationKey, string>>;
+
 function getFormulationState(patientState: PatientState): {
   asked: Record<FormulationKey, boolean>;
   complete: boolean;
+  phase2Started: boolean;
   therapyTurnBase: number | null;
+  model: FormulationModel;
 } {
   const rawAsked = ((patientState as any).simFormulationAsked ?? {}) as Partial<Record<FormulationKey, boolean>>;
   const asked = FORMULATION_CHECKLIST.reduce((acc, k) => {
@@ -42,15 +46,19 @@ function getFormulationState(patientState: PatientState): {
   }, {} as Record<FormulationKey, boolean>);
 
   const complete = Boolean((patientState as any).simFormulationComplete);
+  const phase2Started = Boolean((patientState as any).simPhase2Started);
   const therapyTurnBase =
     typeof (patientState as any).simTherapyTurnBase === "number" ? (patientState as any).simTherapyTurnBase : null;
 
-  return { asked, complete, therapyTurnBase };
+  const model = (((patientState as any).simFormulationModel ?? {}) as FormulationModel) ?? {};
+
+  return { asked, complete, phase2Started, therapyTurnBase, model };
 }
 
 export function getSessionPhase(turnIndex: number, patientState: PatientState): SessionPhase {
   const f = getFormulationState(patientState);
-  if (!f.complete) return "formulation";
+  // Stay in Phase 1 until the checklist is complete AND Phase 2 is explicitly started.
+  if (!f.complete || !f.phase2Started) return "formulation";
   const base = f.therapyTurnBase ?? 0;
   const therapyTurn = Math.max(0, turnIndex - base);
   return getTurnPhase(therapyTurn);
@@ -59,7 +67,17 @@ export function getSessionPhase(turnIndex: number, patientState: PatientState): 
 export function getFormulationProgress(patientState: PatientState) {
   const f = getFormulationState(patientState);
   const done = FORMULATION_CHECKLIST.filter((k) => f.asked[k]).length;
-  return { done, total: FORMULATION_CHECKLIST.length, complete: f.complete, asked: f.asked };
+  return {
+    done,
+    total: FORMULATION_CHECKLIST.length,
+    complete: f.complete,
+    startedPhase2: f.phase2Started,
+    asked: f.asked,
+  };
+}
+
+export function getFormulationModel(patientState: PatientState): FormulationModel {
+  return getFormulationState(patientState).model;
 }
 
 export type PatientTurnOutput = {
@@ -253,40 +271,61 @@ function detectFormulationKey(therapistText: string): FormulationKey | null {
   const t = (therapistText ?? "").toLowerCase();
   if (!t) return null;
 
+  const trimmed = t.trim();
+  const looksLikeQuestion =
+    /\?$/.test(trimmed) ||
+    /\b(kan\s+du|klarer\s+du|hva|når|hvordan|hvilke|hvem|hvor)\b/.test(trimmed);
+
   // Triggers / context
   if (
-    /(når|hvilke\s+situasjon|i\s+hvilke\s+situasjon|hva\s+setter\s+i\s+gang|utløser|trigger)/.test(t)
+    looksLikeQuestion &&
+    /(hvilke\s+situasjon|i\s+hvilke\s+situasjon|hva\s+setter\s+i\s+gang|utløser|trigger|når\s+skjer)/.test(t)
   ) {
     return "triggers";
   }
 
   // Initial "what if" thought
-  if (/(hva\s+hvis|what\s+if|første\s+tanken|den\s+første\s+tanken)/.test(t)) {
+  if (looksLikeQuestion && /(hva\s+hvis|what\s+if|første\s+tanken|den\s+første\s+tanken)/.test(t)) {
     return "whatIfThought";
   }
 
   // Worry chain / escalation ("and then what")
-  if (/(og\s+hvis\s+det\s+skjer\s*hva\s+da|hva\s+da\b|hva\s+er\s+neste|hva\s+skjer\s+videre|bekymringskjede|kjede)/.test(t)) {
+  if (
+    looksLikeQuestion &&
+    /(og\s+hvis\s+det\s+skjer\s*hva\s+da|hva\s+da\b|hva\s+er\s+neste|hva\s+skjer\s+videre|bekymringskjede|kjede)/.test(t)
+  ) {
     return "worryChain";
   }
 
   // Emotions / affect
-  if (/(hva\s+føler|hvilke\s+følelse|hvordan\s+kjennes\s+det|hva\s+kjenner\s+du|hva\s+skjer\s+i\s+kroppen|uro|angst|stress)/.test(t)) {
+  if (
+    looksLikeQuestion &&
+    /(hva\s+føler|hvilke\s+følelse|hvordan\s+kjennes\s+det|hva\s+kjenner\s+du|hva\s+skjer\s+i\s+kroppen)/.test(t)
+  ) {
     return "emotions";
   }
 
   // Positive meta-beliefs about worry (helpful/prepared)
-  if (/(hjelp(er|e)|nyttig|forberedt|klar|kontroll|holde\s+oversikt|unngå\s+å\s+bli\s+overrasket)/.test(t)) {
+  if (
+    looksLikeQuestion &&
+    /(hjelp(er|e)|nyttig|forberedt|unngå\s+å\s+bli\s+overrasket)/.test(t)
+  ) {
     return "positiveMetaBelief";
   }
 
   // Negative meta-beliefs about worry (harmful/dangerous/uncontrollable)
-  if (/(farlig|skad|ødeleg|tar\s+knekken\s+på\s+meg|blir\s+gal|mister\s+kontroll|tåler\s+ikke|ukontroller)/.test(t)) {
+  if (
+    looksLikeQuestion &&
+    /(farlig|skad|ødeleg|tar\s+knekken\s+på\s+meg|blir\s+gal|mister\s+kontroll|tåler\s+ikke|ukontroller)/.test(t)
+  ) {
     return "negativeMetaBelief";
   }
 
   // CAS strategy (what the person does when worry starts)
-  if (/(hva\s+gjør\s+du\s+da|hvordan\s+håndter|bekymr(er|e)\s+mer|grubl(er|e)|sjekk(er|e)|forsikring|unngår|google|ringer|berolig|planlegg(er|e)|scroller)/.test(t)) {
+  if (
+    looksLikeQuestion &&
+    /(hva\s+gjør\s+du\s+da|hvordan\s+håndter|hva\s+pleier\s+du\s+å\s+gjøre|hva\s+gjør\s+du\s+for\s+å\s+få\s+ro)/.test(t)
+  ) {
     return "casStrategy";
   }
 
@@ -454,9 +493,6 @@ export function simulateGadPatientTurn(input: PatientTurnInput): PatientTurnOutp
     const nextPatientState: Partial<PatientState> = {
       simFormulationAsked: askedNext,
       simFormulationComplete: formulation.complete || completeNow,
-      // When formulation becomes complete, start therapy phase turn counting next turn.
-      simTherapyTurnBase:
-        formulation.therapyTurnBase ?? (completeNow ? turnIndex + 1 : null) ?? undefined,
     };
 
     // Add a small drift upwards (scaled by difficulty) so CAS doesn't accidentally drop.
@@ -480,6 +516,11 @@ export function simulateGadPatientTurn(input: PatientTurnInput): PatientTurnOutp
           "Jeg vet ikke… jeg blir bare urolig. Kan du spørre litt mer konkret?",
           { phase: "formulation" },
         );
+
+    if (credited && detectedKey) {
+      const prevModel = (formulation.model ?? {}) as any;
+      nextPatientState.simFormulationModel = { ...prevModel, [detectedKey]: patientReply };
+    }
 
     const systemFeedback = buildSystemFeedback({
       difficultyLevel,

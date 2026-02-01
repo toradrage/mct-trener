@@ -15,6 +15,16 @@ type ChatMessage = {
   timestamp: number;
 };
 
+type FormulationViewModel = {
+  trigger?: string;
+  whatIfThought?: string;
+  worryChain?: string;
+  emotions?: string;
+  positiveMetaBelief?: string;
+  negativeMetaBelief?: string;
+  casStrategy?: string;
+};
+
 export default function TherapyRoomHUD(props: {
   scenarioLabel: string;
   onExit: () => void;
@@ -25,6 +35,13 @@ export default function TherapyRoomHUD(props: {
   onSelectIntervention: (id: MoveId) => void;
   moveSectionLabel?: string;
   sendDisabled?: boolean;
+  formulation?: {
+    model: FormulationViewModel;
+    done: number;
+    total: number;
+    canStartPhase2: boolean;
+    onStartPhase2: () => void;
+  };
   message: string;
   onChangeMessage: (v: string) => void;
   onSubmit: (e: React.FormEvent) => void;
@@ -39,6 +56,7 @@ export default function TherapyRoomHUD(props: {
     onSelectIntervention,
     moveSectionLabel,
     sendDisabled,
+    formulation,
     message,
     onChangeMessage,
     onSubmit,
@@ -86,6 +104,37 @@ export default function TherapyRoomHUD(props: {
 
       {/* Bottom: input + ability cards */}
       <div className="hudBottom" aria-label="Chat og abilities">
+        {formulation ? (
+          <div className="formulationCard" aria-label="Kasusformulering">
+            <div className="formulationTop">
+              <div className="formulationTitle">Kasusformulering</div>
+              <div className="formulationProgress">
+                {formulation.done}/{formulation.total}
+              </div>
+            </div>
+
+            <div className="formulationGrid">
+              <Field label="Trigger" value={formulation.model.trigger} />
+              <Field label="«Hva hvis»" value={formulation.model.whatIfThought} />
+              <Field label="Kjede" value={formulation.model.worryChain} />
+              <Field label="Følelser" value={formulation.model.emotions} />
+              <Field label="+ Meta" value={formulation.model.positiveMetaBelief} />
+              <Field label="- Meta" value={formulation.model.negativeMetaBelief} />
+              <Field label="CAS" value={formulation.model.casStrategy} />
+            </div>
+
+            {formulation.canStartPhase2 ? (
+              <button className="startPhase2" type="button" onClick={formulation.onStartPhase2}>
+                Start fase 2 (behandling)
+              </button>
+            ) : (
+              <div className="formulationHint">
+                Fase 1: kartlegg én konkret episode. Ingen behandling ennå.
+              </div>
+            )}
+          </div>
+        ) : null}
+
         <div className="chatLog" aria-label="Chat logg" ref={chatLogRef}>
           {recent.length === 0 ? (
             <div className="chatHint">Velg en intervensjon og send en melding for å starte.</div>
@@ -239,6 +288,64 @@ export default function TherapyRoomHUD(props: {
           display: grid;
           gap: 8px;
           pointer-events: none;
+        }
+
+        .formulationCard {
+          pointer-events: auto;
+          padding: 12px;
+          border-radius: 16px;
+          background: rgba(255, 255, 255, 0.96);
+          border: 1px solid rgba(0, 0, 0, 0.18);
+          box-shadow: 0 16px 52px rgba(0, 0, 0, 0.20);
+        }
+
+        .formulationTop {
+          display: flex;
+          align-items: baseline;
+          justify-content: space-between;
+          gap: 10px;
+          margin-bottom: 8px;
+        }
+
+        .formulationTitle {
+          font-weight: 900;
+          color: #0b0f19;
+          letter-spacing: 0.2px;
+        }
+
+        .formulationProgress {
+          font-weight: 800;
+          color: rgba(11, 15, 25, 0.72);
+          font-size: 12px;
+        }
+
+        .formulationGrid {
+          display: grid;
+          grid-template-columns: 1fr;
+          gap: 6px;
+        }
+
+        .formulationHint {
+          margin-top: 8px;
+          font-size: 12px;
+          color: rgba(0, 0, 0, 0.62);
+        }
+
+        .startPhase2 {
+          margin-top: 10px;
+          width: 100%;
+          height: 40px;
+          border-radius: 999px;
+          border: 1px solid rgba(28, 78, 216, 0.28);
+          background: #eef4ff;
+          color: #0b0f19;
+          font-weight: 900;
+          cursor: pointer;
+          transition: transform 0.15s, background 0.2s;
+        }
+        .startPhase2:hover {
+          transform: translateY(-1px);
+          background: #e2ecff;
         }
 
         .chatLog {
@@ -396,6 +503,22 @@ export default function TherapyRoomHUD(props: {
           }
         }
       `}</style>
+    </div>
+  );
+}
+
+function Field(props: { label: string; value?: string }) {
+  return (
+    <div
+      style={{
+        display: "grid",
+        gridTemplateColumns: "92px 1fr",
+        gap: 8,
+        alignItems: "baseline",
+      }}
+    >
+      <div style={{ fontSize: 12, fontWeight: 900, color: "rgba(11,15,25,0.70)" }}>{props.label}</div>
+      <div style={{ fontSize: 13, color: "#0b0f19" }}>{props.value?.trim() ? props.value : "—"}</div>
     </div>
   );
 }

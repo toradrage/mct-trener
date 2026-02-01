@@ -5,6 +5,7 @@ import { useSessionStore } from "../../../../../store/sessionStore";
 import {
   getTurnPhase,
   getFormulationProgress,
+  getFormulationModel,
   getSessionPhase,
   simulateGadPatientTurn,
   type FormulationKey,
@@ -71,6 +72,21 @@ export default function Terapirom() {
     () => getSessionPhase(uiTurnIndex, patientState),
     [uiTurnIndex, patientState],
   );
+
+  const formulationProgress = useMemo(
+    () => getFormulationProgress(patientState),
+    [patientState],
+  );
+
+  const formulationModel = useMemo(() => getFormulationModel(patientState), [patientState]);
+
+  function startPhase2() {
+    if (!formulationProgress.complete) return;
+    setPatientState({
+      simPhase2Started: true,
+      simTherapyTurnBase: uiTurnIndex,
+    } as any);
+  }
 
   useEffect(() => {
     if (sessionStatus === "not-started") setSessionStatus("in-progress");
@@ -238,8 +254,7 @@ export default function Terapirom() {
       <TherapyRoomHUD
         scenarioLabel={(() => {
           if (uiPhase === "formulation") {
-            const fp = getFormulationProgress(patientState);
-            return `Fase 1: Kartlegging (GAD) • ${fp.done}/${fp.total}`;
+            return `Fase 1: Kartlegging (GAD) • ${formulationProgress.done}/${formulationProgress.total}`;
           }
           return `Fase 2: Intervensjon (GAD) • ${uiPhase}`;
         })()}
@@ -254,6 +269,25 @@ export default function Terapirom() {
         onSubmit={handleSend}
         sendDisabled={uiPhase === "formulation" ? !formulationKey : !interventionType}
         moveSectionLabel={uiPhase === "formulation" ? "Kartleggingsspørsmål" : "Intervensjoner"}
+        formulation={
+          uiPhase === "formulation"
+            ? {
+                model: {
+                  trigger: formulationModel.triggers,
+                  whatIfThought: formulationModel.whatIfThought,
+                  worryChain: formulationModel.worryChain,
+                  emotions: formulationModel.emotions,
+                  positiveMetaBelief: formulationModel.positiveMetaBelief,
+                  negativeMetaBelief: formulationModel.negativeMetaBelief,
+                  casStrategy: formulationModel.casStrategy,
+                },
+                done: formulationProgress.done,
+                total: formulationProgress.total,
+                canStartPhase2: formulationProgress.complete,
+                onStartPhase2: startPhase2,
+              }
+            : undefined
+        }
       />
 
       <style jsx>{`
