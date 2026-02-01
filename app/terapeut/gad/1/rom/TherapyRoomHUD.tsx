@@ -239,15 +239,14 @@ export default function TherapyRoomHUD(props: {
           overflow: auto;
           padding: 12px 12px;
           border-radius: 16px;
-          background: rgba(6, 10, 22, 0.70);
-          border: 1px solid rgba(255, 255, 255, 0.12);
-          backdrop-filter: blur(16px);
-          box-shadow: 0 12px 40px rgba(0, 0, 0, 0.20);
+          background: rgba(255, 255, 255, 0.96);
+          border: 1px solid rgba(0, 0, 0, 0.18);
+          box-shadow: 0 16px 52px rgba(0, 0, 0, 0.28);
         }
 
         .chatHint {
-          color: rgba(255, 255, 255, 0.70);
-          font-size: 12px;
+          color: rgba(0, 0, 0, 0.62);
+          font-size: 13px;
         }
 
         .chatLine {
@@ -270,21 +269,21 @@ export default function TherapyRoomHUD(props: {
           border-radius: 16px;
           line-height: 1.45;
           font-size: 14px;
-          color: rgba(255, 255, 255, 0.95);
-          border: 1px solid rgba(255, 255, 255, 0.14);
-          background: rgba(10, 14, 26, 0.88);
-          box-shadow: 0 14px 44px rgba(0, 0, 0, 0.28);
+          color: #0b0f19;
+          border: 1px solid rgba(0, 0, 0, 0.18);
+          background: #ffffff;
+          box-shadow: 0 10px 24px rgba(0, 0, 0, 0.12);
           text-wrap: pretty;
         }
 
         .chatLine.therapist .bubble {
-          background: rgba(16, 36, 86, 0.78);
-          border-color: rgba(99, 162, 255, 0.28);
+          background: #eef4ff;
+          border-color: rgba(28, 78, 216, 0.20);
         }
 
         .chatLine.patient .bubble {
-          background: rgba(10, 14, 26, 0.90);
-          border-color: rgba(255, 255, 255, 0.16);
+          background: #ffffff;
+          border-color: rgba(0, 0, 0, 0.18);
         }
 
         .abilities {
