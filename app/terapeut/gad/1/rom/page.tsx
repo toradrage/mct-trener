@@ -7,6 +7,7 @@ import {
   getFormulationProgress,
   getSessionPhase,
   simulateGadPatientTurn,
+  type FormulationKey,
   type InterventionType,
 } from "../../../../../simulator/patientSimulator";
 import DevDebugPanel from "./DevDebugPanel";
@@ -18,6 +19,16 @@ const INTERVENTIONS: Array<{ id: InterventionType; label: string }> = [
   { id: "eksperiment", label: "Eksperiment" },
   { id: "mindfulness", label: "Mindfulness" },
   { id: "verbal", label: "Verbal reattribusjon" },
+];
+
+const FORMULATION_QUESTIONS: Array<{ id: FormulationKey; label: string }> = [
+  { id: "triggers", label: "Trigger (hva/når)" },
+  { id: "whatIfThought", label: "Første «hva hvis»" },
+  { id: "worryChain", label: "Bekymringskjede" },
+  { id: "emotions", label: "Følelser/kropp" },
+  { id: "positiveMetaBelief", label: "+ Meta (hjelper?)" },
+  { id: "negativeMetaBelief", label: "- Meta (farlig/ukontroll?)" },
+  { id: "casStrategy", label: "CAS-respons (hva gjør du?)" },
 ];
 
 function clamp01to100(n: number) {
@@ -48,6 +59,7 @@ export default function Terapirom() {
 
   const [melding, setMelding] = useState("");
   const [interventionType, setInterventionType] = useState<InterventionType | null>(null);
+  const [formulationKey, setFormulationKey] = useState<FormulationKey | null>(null);
   const [visPasientSvar, setVisPasientSvar] = useState(false);
   const [pasientSvar, setPasientSvar] = useState<string>("");
 
@@ -130,7 +142,11 @@ export default function Terapirom() {
 
   async function handleSend(e: React.FormEvent) {
     e.preventDefault();
-    if (!interventionType) return;
+    if (uiPhase === "formulation") {
+      if (!formulationKey) return;
+    } else {
+      if (!interventionType) return;
+    }
 
     const text = melding.trim();
     if (!text) return;
@@ -142,10 +158,11 @@ export default function Terapirom() {
     const sim = simulateGadPatientTurn({
       disorder: "GAD",
       difficultyLevel,
-      interventionType,
+      interventionType: interventionType ?? "verbal",
       therapistText: text,
       patientState,
       turnIndex,
+      formulationSelectedKey: uiPhase === "formulation" ? formulationKey : null,
     });
     const nextState = { ...patientState, ...sim.nextPatientState };
 
@@ -153,10 +170,10 @@ export default function Terapirom() {
       sender: "therapist",
       text,
       timestamp: now,
-      interventionType,
+      interventionType: uiPhase === "formulation" ? `formulation:${formulationKey}` : interventionType ?? undefined,
     });
     addIntervention({
-      type: interventionType,
+      type: uiPhase === "formulation" ? `formulation:${formulationKey}` : (interventionType ?? "verbal"),
       payload: {
         text,
         sim: sim.signals,
@@ -170,6 +187,10 @@ export default function Terapirom() {
 
     setMelding("");
 
+    if (uiPhase === "formulation") {
+      // Keep selection so the therapist can continue the same category if desired.
+    }
+
     // Always show something immediately (rules reply), then optionally swap to LLM paraphrase.
     const rulesReply = sim.patientReply;
     setPasientSvar(rulesReply);
@@ -181,7 +202,7 @@ export default function Terapirom() {
             rulesReply,
             systemFeedback: sim.systemFeedback,
             phase,
-            interventionType,
+            interventionType: (interventionType ?? "verbal"),
             patientState: {
               beliefUncontrollability: nextState.beliefUncontrollability,
               beliefDanger: nextState.beliefDanger,
@@ -225,12 +246,14 @@ export default function Terapirom() {
         onExit={handleExit}
         metrics={metrics}
         messages={messages}
-        interventions={INTERVENTIONS}
-        selectedIntervention={interventionType}
-        onSelectIntervention={setInterventionType}
+        interventions={uiPhase === "formulation" ? (FORMULATION_QUESTIONS as any) : (INTERVENTIONS as any)}
+        selectedIntervention={uiPhase === "formulation" ? (formulationKey as any) : (interventionType as any)}
+        onSelectIntervention={uiPhase === "formulation" ? (setFormulationKey as any) : (setInterventionType as any)}
         message={melding}
         onChangeMessage={setMelding}
         onSubmit={handleSend}
+        sendDisabled={uiPhase === "formulation" ? !formulationKey : !interventionType}
+        moveSectionLabel={uiPhase === "formulation" ? "Kartleggingsspørsmål" : "Intervensjoner"}
       />
 
       <style jsx>{`

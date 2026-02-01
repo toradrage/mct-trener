@@ -12,6 +12,8 @@ export type PatientTurnInput = {
   patientState: PatientState;
   /** 0-based therapist turn index before applying this intervention. */
   turnIndex?: number;
+  /** Phase 1 only: which formulation question-type the therapist selected in the UI. */
+  formulationSelectedKey?: FormulationKey | null;
 };
 
 export type SessionPhase = "formulation" | Phase;
@@ -183,6 +185,11 @@ function buildSystemFeedback(params: {
   casBefore: number;
   casAfter: number;
   metaWorryBefore: number;
+  formulationInfo?: {
+    selectedKey: FormulationKey | null;
+    detectedKey: FormulationKey | null;
+    credited: boolean;
+  };
   deltas: {
     threat: number;
     uncontrollability: number;
@@ -201,6 +208,11 @@ function buildSystemFeedback(params: {
   if (params.phase === "formulation") {
     lines.push("Phase 1: Case formulation (GAD) — mål er kartlegging, ikke endring.");
     lines.push("Lock: Ingen CAS-reduksjon forventes ennå; intervensjoner ‘virker’ ikke i denne fasen.");
+    if (params.formulationInfo) {
+      const s = params.formulationInfo.selectedKey ?? "(none)";
+      const d = params.formulationInfo.detectedKey ?? "(none)";
+      lines.push(`Q-type: selected=${s} detected=${d} credited=${params.formulationInfo.credited ? "yes" : "no"}`);
+    }
     const fp = getFormulationProgress((params as any).patientStateForFormulation ?? {});
     if (fp && typeof fp.done === "number") {
       lines.push(
@@ -426,9 +438,14 @@ export function simulateGadPatientTurn(input: PatientTurnInput): PatientTurnOutp
 
   // Phase 1: Case formulation (no interventions work yet; no CAS reduction expected).
   if (sessionPhase === "formulation") {
-    const key = detectFormulationKey(input.therapistText);
+    const detectedKey = detectFormulationKey(input.therapistText);
+    const selectedKey = input.formulationSelectedKey ?? null;
+
+    // Progression is locked behind selecting the right question-type (not free text alone).
+    const credited = Boolean(detectedKey && selectedKey && detectedKey === selectedKey);
+
     const askedNext = { ...formulation.asked };
-    if (key) askedNext[key] = true;
+    if (credited && detectedKey) askedNext[detectedKey] = true;
 
     const done = FORMULATION_CHECKLIST.filter((k) => askedNext[k]).length;
     const completeNow = done >= FORMULATION_CHECKLIST.length;
@@ -457,7 +474,12 @@ export function simulateGadPatientTurn(input: PatientTurnInput): PatientTurnOutp
     const casAfter = deriveCas({ ...patientState, ...nextPatientState });
     const deltaCasObserved = casAfter - casBefore;
 
-    const patientReply = pickFormulationReply({ key, difficultyLevel, phase: sessionPhase });
+    const patientReply = credited
+      ? pickFormulationReply({ key: detectedKey, difficultyLevel, phase: sessionPhase })
+      : calibratePatientSpeech(
+          "Jeg vet ikke… jeg blir bare urolig. Kan du spørre litt mer konkret?",
+          { phase: "formulation" },
+        );
 
     const systemFeedback = buildSystemFeedback({
       difficultyLevel,
@@ -467,6 +489,7 @@ export function simulateGadPatientTurn(input: PatientTurnInput): PatientTurnOutp
       casBefore,
       casAfter,
       metaWorryBefore: metaWorry,
+      formulationInfo: { selectedKey, detectedKey, credited },
       deltas: {
         threat: (nextPatientState.beliefDanger ?? 0) - (patientState.beliefDanger ?? 0),
         uncontrollability:

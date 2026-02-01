@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef } from "react";
 
-type InterventionType = "sokratisk" | "eksperiment" | "mindfulness" | "verbal";
+type MoveId = string;
 
 type Metric = {
   label: string;
@@ -20,9 +20,11 @@ export default function TherapyRoomHUD(props: {
   onExit: () => void;
   metrics: readonly [Metric, Metric, Metric];
   messages: ChatMessage[];
-  interventions: Array<{ id: InterventionType; label: string }>;
-  selectedIntervention: InterventionType | null;
-  onSelectIntervention: (id: InterventionType) => void;
+  interventions: Array<{ id: MoveId; label: string }>;
+  selectedIntervention: MoveId | null;
+  onSelectIntervention: (id: MoveId) => void;
+  moveSectionLabel?: string;
+  sendDisabled?: boolean;
   message: string;
   onChangeMessage: (v: string) => void;
   onSubmit: (e: React.FormEvent) => void;
@@ -35,6 +37,8 @@ export default function TherapyRoomHUD(props: {
     interventions,
     selectedIntervention,
     onSelectIntervention,
+    moveSectionLabel,
+    sendDisabled,
     message,
     onChangeMessage,
     onSubmit,
@@ -97,7 +101,7 @@ export default function TherapyRoomHUD(props: {
           )}
         </div>
 
-        <div className="abilities" aria-label="Ability cards">
+        <div className="abilities" aria-label={moveSectionLabel ?? "Ability cards"}>
           {interventions.map((i) => (
             <button
               key={i.id}
@@ -122,7 +126,11 @@ export default function TherapyRoomHUD(props: {
             aria-label="Melding til pasienten"
             required
           />
-          <button className="chatSend" type="submit" disabled={!selectedIntervention}>
+          <button
+            className="chatSend"
+            type="submit"
+            disabled={typeof sendDisabled === "boolean" ? sendDisabled : !selectedIntervention}
+          >
             Send
           </button>
         </form>
