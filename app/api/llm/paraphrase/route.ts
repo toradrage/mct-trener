@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import {
   calibratePatientSpeech,
+  violatesPatientLanguageHardRules,
   violatesPatientVoice,
 } from "../../../../simulator/patientLanguage";
 
@@ -128,8 +129,8 @@ export async function POST(req: Request) {
     // Safety: keep it short.
     const rawReply = out.split("\n").join(" ").slice(0, 280).trim();
 
-    // Hard patient-language rule: if the LLM uses forbidden pronouns, fall back to rules reply.
-    if (!rawReply || violatesPatientVoice(rawReply)) {
+    // Hard patient-language rules: if the LLM uses forbidden pronouns, therapy terms, or explicit insight, fall back.
+    if (!rawReply || violatesPatientVoice(rawReply) || violatesPatientLanguageHardRules(rawReply)) {
       return NextResponse.json({ ok: true, reply: calibratePatientSpeech(rulesReply, { phase: body.phase }) });
     }
 

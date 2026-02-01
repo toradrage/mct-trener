@@ -20,6 +20,9 @@ const MAN_WORD = /\bman\b/i;
 // "en" is ambiguous in Norwegian (number vs pronoun). We only flag likely pronoun uses.
 const EN_PRONOUN_LIKELY = /\ben\s+(?:blir|kan|må|skal|gjør|kjenner|tenker|får|har|er)\b/i;
 
+const THERAPY_TERMS =
+  /\b(prosess|analyse-modus|metakognisjon|metakognitiv\w*|cas|monitorering|eksperiment|intervensjon|systemfeedback|system|regel|mct|cbt)\b/i;
+
 export function violatesPatientVoice(text: string, opts: PatientVoiceOptions = {}): boolean {
   const t = (text ?? "").trim();
   if (!t) return false;
@@ -27,6 +30,24 @@ export function violatesPatientVoice(text: string, opts: PatientVoiceOptions = {
   if (!opts.allowWe && WE_WORDS.test(t)) return true;
   if (!opts.allowGeneralPronouns && MAN_WORD.test(t)) return true;
   if (!opts.allowGeneralPronouns && EN_PRONOUN_LIKELY.test(t)) return true;
+
+  return false;
+}
+
+export function violatesPatientLanguageHardRules(text: string): boolean {
+  const t = (text ?? "").trim();
+  if (!t) return false;
+
+  // Therapy terminology should never appear in patient speech.
+  if (THERAPY_TERMS.test(t)) return true;
+
+  // Explicit insight / mechanism statements.
+  if (
+    /\b(jeg\s+(?:ser|skjønner|innser|har\s+forstått|har\s+læ(æ|r)t))\b/i.test(t) ||
+    /\b(det\s+handler\s+om|det\s+er\s+egentlig|mekanisme|strategi)\b/i.test(t)
+  ) {
+    return true;
+  }
 
   return false;
 }
@@ -75,10 +96,25 @@ function stripOvertInsightPhrases(text: string) {
 
   // Avoid explicit mechanism/explanation connectors (especially early).
   t = t.replace(/\b(slik\s+at|sånn\s+at|derfor|fordi)\b/gi, "");
+
+  // Remove therapy terminology if it slips in.
+  t = t.replace(THERAPY_TERMS, "");
+
+  // Remove explicit insight/mechanism claims.
+  t = t.replace(/\b(jeg\s+(?:ser|skjønner|innser|har\s+forstått|har\s+læ(æ|r)t))\b/gi, "");
+  t = t.replace(/\b(det\s+handler\s+om|det\s+er\s+egentlig|mekanisme|strategi)\b/gi, "");
+
   t = t.replace(/\s{2,}/g, " ");
   t = t.replace(/\s+([,.!?…])/g, "$1");
 
   return t.trim();
+}
+
+function fallbackPatientUtterance(phase?: "early" | "mid" | "late") {
+  if (phase === "late") return "Jeg vet ikke… men det føles litt lettere.";
+  if (phase === "mid") return "Jeg vet ikke… jeg blir bare urolig.";
+  // early default
+  return "Jeg vet ikke… jeg blir bare veldig urolig.";
 }
 
 export function calibratePatientSpeech(
@@ -87,7 +123,7 @@ export function calibratePatientSpeech(
 ): string {
   const phase = opts.phase;
   const defaultsByPhase = {
-    early: { maxSentences: 1, maxChars: 120 },
+    early: { maxSentences: 1, maxChars: 110 },
     mid: { maxSentences: 1, maxChars: 140 },
     late: { maxSentences: 2, maxChars: 180 },
   } as const;
@@ -110,5 +146,14 @@ export function calibratePatientSpeech(
 
   // Final cleanup
   out = out.replace(/\s{2,}/g, " ").trim();
+
+  // If filtering removed too much, fall back to a safe experiential utterance.
+  if (!out) out = fallbackPatientUtterance(phase);
+
+  // If it still violates hard rules after calibration, fall back.
+  if (violatesPatientVoice(out, opts) || violatesPatientLanguageHardRules(out)) {
+    out = sanitizePatientSpeech(fallbackPatientUtterance(phase), opts);
+  }
+
   return out;
 }
