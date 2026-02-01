@@ -111,10 +111,47 @@ function stripOvertInsightPhrases(text: string) {
 }
 
 function fallbackPatientUtterance(phase?: "early" | "mid" | "late") {
-  if (phase === "late") return "Jeg vet ikke… men det føles litt lettere.";
-  if (phase === "mid") return "Jeg vet ikke… jeg blir bare urolig.";
-  // early default
-  return "Jeg vet ikke… jeg blir bare veldig urolig.";
+  if (phase === "late") return "Jeg vet ikke… men det føles litt lettere i kroppen.";
+  if (phase === "mid") return "Jeg vet ikke… men jeg kjenner at jeg blir urolig og dras inn i det.";
+  // early default: confusion + intensity/impulse/consequence (not empty).
+  return "Jeg vet ikke… men jeg blir veldig urolig, og det tar fort helt av.";
+}
+
+function hasExperienceAnchor(text: string) {
+  const t = (text ?? "").toLowerCase();
+  // At least one of: feeling, impulse, consequence.
+  return (
+    /\b(urolig|stress|stressa|tvil|redd|panikk|stram|klump|vondt|kvalm|hjerte)\b/.test(t) ||
+    /\b(må\s+tenke|må\s+sjekke|klarer\s+ikke\s+stoppe|får\s+ikke\s+stoppet|dras\s+inn|spinner)\b/.test(t) ||
+    /\b(blir\s+verre|eskalerer|tar\s+av|øker|bare\s+mer)\b/.test(t)
+  );
+}
+
+function anchorUncertainty(text: string, phase?: "early" | "mid" | "late") {
+  let t = (text ?? "").trim();
+  if (!t) return t;
+
+  const startsWithUncertainty = /^jeg\s+vet\s+ikke\b/i.test(t);
+  if (!startsWithUncertainty) return t;
+  if (hasExperienceAnchor(t)) return t;
+
+  // Append an experiential anchor without adding insight/mechanism.
+  const tailByPhase: Record<"early" | "mid" | "late", string> = {
+    early: "… men jeg blir veldig urolig, og det tar fort helt av.",
+    mid: "… men jeg kjenner at jeg blir urolig og dras inn i det.",
+    late: "… men jeg kjenner det i kroppen, og det er litt mindre intenst.",
+  };
+
+  const p: "early" | "mid" | "late" = phase ?? "mid";
+
+  // Avoid doubling punctuation if the model already added ellipsis.
+  if (/…\s*$/.test(t)) {
+    return (t.replace(/…\s*$/, "") + tailByPhase[p]).trim();
+  }
+  if (/[.!?]$/.test(t)) {
+    return (t.replace(/[.!?]\s*$/, "") + tailByPhase[p]).trim();
+  }
+  return (t + " " + tailByPhase[p]).replace(/\s{2,}/g, " ").trim();
 }
 
 export function calibratePatientSpeech(
@@ -146,6 +183,9 @@ export function calibratePatientSpeech(
 
   // Final cleanup
   out = out.replace(/\s{2,}/g, " ").trim();
+
+  // If the reply starts with uncertainty, it must still be anchored in experience.
+  out = anchorUncertainty(out, phase);
 
   // If filtering removed too much, fall back to a safe experiential utterance.
   if (!out) out = fallbackPatientUtterance(phase);
