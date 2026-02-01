@@ -86,7 +86,7 @@ export default function Terapirom() {
     };
   }): Promise<string | null> {
     // Keep UX snappy: if LLM doesn't respond fast, fall back to rules text.
-    const budgetMs = 900;
+    const budgetMs = 300;
 
     try {
       const controller = new AbortController();
@@ -207,6 +207,7 @@ export default function Terapirom() {
         scenarioLabel="Scenario: GAD – nivå 1"
         onExit={handleExit}
         metrics={metrics}
+        messages={messages}
         interventions={INTERVENTIONS}
         selectedIntervention={interventionType}
         onSelectIntervention={setInterventionType}

@@ -1,5 +1,7 @@
 "use client";
 
+import { useEffect, useMemo, useRef } from "react";
+
 type InterventionType = "sokratisk" | "eksperiment" | "mindfulness" | "verbal";
 
 type Metric = {
@@ -7,10 +9,17 @@ type Metric = {
   value: number; // 0-100
 };
 
+type ChatMessage = {
+  sender: "therapist" | "patient";
+  text: string;
+  timestamp: number;
+};
+
 export default function TherapyRoomHUD(props: {
   scenarioLabel: string;
   onExit: () => void;
   metrics: readonly [Metric, Metric, Metric];
+  messages: ChatMessage[];
   interventions: Array<{ id: InterventionType; label: string }>;
   selectedIntervention: InterventionType | null;
   onSelectIntervention: (id: InterventionType) => void;
@@ -22,6 +31,7 @@ export default function TherapyRoomHUD(props: {
     scenarioLabel,
     onExit,
     metrics,
+    messages,
     interventions,
     selectedIntervention,
     onSelectIntervention,
@@ -29,6 +39,19 @@ export default function TherapyRoomHUD(props: {
     onChangeMessage,
     onSubmit,
   } = props;
+
+  const chatLogRef = useRef<HTMLDivElement | null>(null);
+
+  const recent = useMemo(() => {
+    // Keep it lightweight: show only recent turns.
+    return messages.slice(Math.max(0, messages.length - 8));
+  }, [messages]);
+
+  useEffect(() => {
+    const el = chatLogRef.current;
+    if (!el) return;
+    el.scrollTop = el.scrollHeight;
+  }, [recent.length]);
 
   return (
     <div className="hud" aria-label="HUD overlay">
@@ -59,6 +82,21 @@ export default function TherapyRoomHUD(props: {
 
       {/* Bottom: input + ability cards */}
       <div className="hudBottom" aria-label="Chat og abilities">
+        <div className="chatLog" aria-label="Chat logg" ref={chatLogRef}>
+          {recent.length === 0 ? (
+            <div className="chatHint">Velg en intervensjon og send en melding for å starte.</div>
+          ) : (
+            recent.map((m) => (
+              <div
+                key={`${m.timestamp}-${m.sender}`}
+                className={`chatLine ${m.sender === "therapist" ? "therapist" : "patient"}`}
+              >
+                <span className="bubble">{m.text}</span>
+              </div>
+            ))
+          )}
+        </div>
+
         <div className="abilities" aria-label="Ability cards">
           {interventions.map((i) => (
             <button
@@ -193,6 +231,52 @@ export default function TherapyRoomHUD(props: {
           display: grid;
           gap: 8px;
           pointer-events: none;
+        }
+
+        .chatLog {
+          pointer-events: auto;
+          max-height: 170px;
+          overflow: auto;
+          padding: 10px 10px;
+          border-radius: 16px;
+          background: rgba(255, 255, 255, 0.06);
+          border: 1px solid rgba(255, 255, 255, 0.10);
+          backdrop-filter: blur(16px);
+          box-shadow: 0 12px 40px rgba(0, 0, 0, 0.20);
+        }
+
+        .chatHint {
+          color: rgba(255, 255, 255, 0.70);
+          font-size: 12px;
+        }
+
+        .chatLine {
+          display: flex;
+          margin: 6px 0;
+        }
+
+        .chatLine.therapist {
+          justify-content: flex-end;
+        }
+
+        .chatLine.patient {
+          justify-content: flex-start;
+        }
+
+        .bubble {
+          max-width: min(720px, 78vw);
+          padding: 8px 10px;
+          border-radius: 14px;
+          line-height: 1.25;
+          font-size: 12px;
+          color: rgba(255, 255, 255, 0.92);
+          border: 1px solid rgba(255, 255, 255, 0.12);
+          background: rgba(15, 23, 42, 0.42);
+        }
+
+        .chatLine.therapist .bubble {
+          background: rgba(37, 99, 235, 0.22);
+          border-color: rgba(59, 130, 246, 0.22);
         }
 
         .abilities {
