@@ -32,6 +32,7 @@ export default function Terapirom() {
   const {
     difficultyLevel,
     avatarProfile,
+    messages,
     addMessage,
     addIntervention,
     patientState,
@@ -76,6 +77,7 @@ export default function Terapirom() {
     if (!text) return;
 
     const now = Date.now();
+    const turnIndex = messages.filter((m) => m.sender === "therapist").length;
 
     const sim = simulateGadPatientTurn({
       disorder: "GAD",
@@ -83,6 +85,7 @@ export default function Terapirom() {
       interventionType,
       therapistText: text,
       patientState,
+      turnIndex,
     });
     const nextState = { ...patientState, ...sim.nextPatientState };
 
